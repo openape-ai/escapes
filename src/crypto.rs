@@ -29,16 +29,6 @@ pub fn sign_challenge(signing_key: &SigningKey, challenge: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(signature.to_bytes())
 }
 
-/// Extract the SSH public key string from an OpenSSH private key file.
-#[allow(dead_code)]
-pub fn public_key_from_private(key_path: &Path) -> Result<String, Error> {
-    let ssh_key = PrivateKey::read_openssh_file(key_path)
-        .map_err(|e| Error::Auth(format!("Failed to read key {}: {e}", key_path.display())))?;
-
-    let public_key = ssh_key.public_key();
-    public_key.to_openssh().map_err(|e| Error::Auth(format!("Failed to export public key: {e}")))
-}
-
 /// Compute SHA-256 hash of a command and its arguments.
 /// Format: hash of space-joined command parts.
 pub fn cmd_hash(cmd: &[String]) -> String {
