@@ -1,10 +1,10 @@
-# clawgate-sudo
+# openape-sudo (`apes`)
 
-Privilege elevation via ClawGate grants. Like `sudo`, but every command requires human approval through a web UI before it executes.
+Privilege elevation via OpenAPE grants. Like `sudo`, but every command requires human approval through a web UI before it executes.
 
 ## How It Works
 
-1. Agent authenticates to the ClawGate id-server via Ed25519 challenge-response
+1. Agent authenticates to the OpenAPE IdP via Ed25519 challenge-response
 2. A grant request is created (includes the exact command + cryptographic hash)
 3. A human approver reviews and approves/denies the request in the web UI
 4. On approval, the agent receives a signed AuthZ-JWT, verifies it locally, then executes the command as root
@@ -18,7 +18,7 @@ cargo build --release
 sudo make install
 ```
 
-This installs the binary to `/usr/local/bin/clawgate-sudo` with the setuid bit set (`4755`), allowing any user to invoke it while the binary handles privilege escalation securely.
+This installs the binary to `/usr/local/bin/apes` with the setuid bit set (`4755`), allowing any user to invoke it while the binary handles privilege escalation securely.
 
 ## Agent Enrollment
 
@@ -27,12 +27,12 @@ Enrollment is a two-step process: generate keys locally, then have an admin appr
 ### Step 1: Generate Keys (on the server, as root)
 
 ```bash
-sudo clawgate-sudo enroll --server https://id.example.com --agent-name prod-web-01
+sudo apes enroll --server https://id.example.com --agent-name prod-web-01
 ```
 
 This creates:
-- `/etc/clawgate-sudo/agent.key` — Ed25519 private key (mode `0600`)
-- `/etc/clawgate-sudo/config.toml` — configuration with agent ID already set (mode `0600`)
+- `/etc/apes/agent.key` — Ed25519 private key (mode `0600`)
+- `/etc/apes/config.toml` — configuration with agent ID already set (mode `0600`)
 
 The command prints an enrollment URL:
 
@@ -41,8 +41,8 @@ The command prints an enrollment URL:
 
   Agent ID:    550e8400-e29b-41d4-a716-446655440000
   Agent Name:  prod-web-01
-  Config:      /etc/clawgate-sudo/config.toml
-  Key:         /etc/clawgate-sudo/agent.key
+  Config:      /etc/apes/config.toml
+  Key:         /etc/apes/agent.key
   Public Key:  ssh-ed25519 AAAA...
 
   Share this URL with your admin to complete enrollment:
@@ -53,7 +53,7 @@ The command prints an enrollment URL:
 
 ### Step 2: Admin Approves (in the browser)
 
-An admin opens the enrollment URL, logs into the id-server, and completes the form:
+An admin opens the enrollment URL, logs into the IdP, and completes the form:
 
 - **Name**, **Public Key**, and **Agent ID** are pre-filled from the URL
 - **Owner** — email of the agent operator
@@ -65,16 +65,16 @@ On submit, the agent is registered and immediately active. No further steps need
 
 ```bash
 # Run a command with grant-based approval
-clawgate-sudo -- apt-get update
+apes -- apt-get update
 
 # Provide a reason (shown to the approver)
-clawgate-sudo --reason "Deploy hotfix #123" -- systemctl restart nginx
+apes --reason "Deploy hotfix #123" -- systemctl restart nginx
 
 # Override poll timeout (default: 300s)
-clawgate-sudo --timeout 60 -- some-command
+apes --timeout 60 -- some-command
 
 # Use a custom config path
-clawgate-sudo --config /custom/config.toml -- some-command
+apes --config /custom/config.toml -- some-command
 ```
 
 The CLI blocks until the approver acts:
@@ -87,14 +87,14 @@ The CLI blocks until the approver acts:
 
 ## Configuration
 
-`/etc/clawgate-sudo/config.toml`:
+`/etc/apes/config.toml`:
 
 ```toml
 server_url = "https://id.example.com"
 agent_id = "550e8400-e29b-41d4-a716-446655440000"
-key_path = "/etc/clawgate-sudo/agent.key"
+key_path = "/etc/apes/agent.key"
 # target = "prod-web-01"    # default: hostname
-# audit_log = "/var/log/clawgate-sudo/audit.log"
+# audit_log = "/var/log/apes/audit.log"
 
 [poll]
 interval_secs = 2

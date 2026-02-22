@@ -1,8 +1,8 @@
 server_url = "https://id.example.com"
 agent_id = "550e8400-e29b-41d4-a716-446655440000"
-key_path = "/etc/clawgate-sudo/agent.key"       # OpenSSH Ed25519 Private Key
+key_path = "/etc/apes/agent.key"                 # OpenSSH Ed25519 Private Key
 # target = "prod-server-1"                      # default: hostname
-# audit_log = "/var/log/clawgate-sudo/audit.log"
+# audit_log = "/var/log/apes/audit.log"
 
 [poll]
 interval_secs = 2

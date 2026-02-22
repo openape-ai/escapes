@@ -1,6 +1,6 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-BINARY = clawgate-sudo
+BINARY = apes
 
 .PHONY: build install uninstall clean
 
