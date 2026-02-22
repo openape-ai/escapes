@@ -1,0 +1,87 @@
+use std::ffi::CString;
+
+use nix::unistd::{geteuid, getuid, seteuid, Uid};
+
+use crate::error::Error;
+
+/// Drop privileges from setuid-root to real user.
+/// Returns the real UID for later use in audit log.
+pub fn drop_privileges() -> Result<Uid, Error> {
+    let real_uid = getuid();
+    let effective_uid = geteuid();
+
+    if effective_uid.is_root() {
+        seteuid(real_uid)
+            .map_err(|e| Error::Privilege(format!("Failed to drop privileges: {e}")))?;
+    }
+
+    Ok(real_uid)
+}
+
+/// Re-elevate to root (using saved set-user-ID from setuid bit).
+pub fn elevate() -> Result<(), Error> {
+    seteuid(Uid::from_raw(0))
+        .map_err(|e| Error::Privilege(format!("Failed to elevate privileges: {e}")))?;
+    Ok(())
+}
+
+/// Remove dangerous environment variables before exec.
+pub fn sanitize_env() {
+    for var in [
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "LD_DEBUG",
+        "LD_PROFILE",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "IFS",
+        "BASH_ENV",
+        "ENV",
+        "CDPATH",
+    ] {
+        // SAFETY: var names are static strings, no concurrent access concern in single-threaded context
+        unsafe { std::env::remove_var(var) };
+    }
+
+    // SAFETY: PATH is set to a known-safe value before execvp
+    unsafe {
+        std::env::set_var(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        );
+    }
+}
+
+/// Replace the current process with the given command using execvp.
+pub fn run_command(cmd: &[String]) -> Result<(), Error> {
+    if cmd.is_empty() {
+        return Err(Error::Exec("Empty command".into()));
+    }
+
+    let program = CString::new(cmd[0].as_str())
+        .map_err(|_| Error::Exec(format!("Invalid command name: {}", cmd[0])))?;
+
+    let args: Vec<CString> = cmd
+        .iter()
+        .map(|a| {
+            CString::new(a.as_str())
+                .map_err(|_| Error::Exec(format!("Invalid argument: {a}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let arg_refs: Vec<&std::ffi::CStr> = args.iter().map(|a| a.as_c_str()).collect();
+
+    // execvp replaces this process — if it returns, it failed
+    nix::unistd::execvp(&program, &arg_refs)
+        .map_err(|e| {
+            if e == nix::errno::Errno::ENOENT {
+                Error::NotFound(cmd[0].clone())
+            } else {
+                Error::Exec(format!("execvp failed: {e}"))
+            }
+        })?;
+
+    unreachable!()
+}
