@@ -20,8 +20,9 @@ fn main() {
     let result = match cli.command {
         Some(Commands::Enroll {
             server,
+            agent_email,
             agent_name,
-        }) => enroll::run(&server, agent_name),
+        }) => enroll::run(&server, &agent_email, agent_name),
         None => run_sudo(&cli),
     };
 

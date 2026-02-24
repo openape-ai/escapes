@@ -9,7 +9,7 @@ use crate::error::Error;
 const CONFIG_DIR: &str = "/etc/apes";
 
 /// Run the enroll subcommand.
-pub fn run(server_url: &str, agent_name: Option<String>) -> Result<(), Error> {
+pub fn run(server_url: &str, agent_email: &str, agent_name: Option<String>) -> Result<(), Error> {
     let name = agent_name.unwrap_or_else(|| {
         hostname::get()
             .map(|h| h.to_string_lossy().into_owned())
@@ -66,10 +66,11 @@ timeout_secs = 300
         .map_err(|e| Error::Config(format!("Failed to set config permissions: {e}")))?;
 
     // Build enrollment URL for admin (includes agent_id)
+    let encoded_email = agent_email.replace(' ', "%20");
     let encoded_name = name.replace(' ', "%20");
     let encoded_key = public_key.replace(' ', "%20");
     let enroll_url = format!(
-        "{server_url}/enroll?name={encoded_name}&key={encoded_key}&id={agent_id}"
+        "{server_url}/enroll?email={encoded_email}&name={encoded_name}&key={encoded_key}&id={agent_id}"
     );
 
     eprintln!();

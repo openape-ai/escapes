@@ -33,6 +33,10 @@ pub enum Commands {
         #[arg(long)]
         server: String,
 
+        /// Agent email address (used as identifier on the IdP)
+        #[arg(long)]
+        agent_email: String,
+
         /// Agent display name (defaults to hostname)
         #[arg(long)]
         agent_name: Option<String>,
