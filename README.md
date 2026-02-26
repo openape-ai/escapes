@@ -26,6 +26,15 @@ User runs:  apes -- systemctl restart nginx
 - Environment is sanitized before exec (LD_PRELOAD, PATH, etc.)
 - Full audit log in JSONL format
 
+### Security Model
+
+`apes` authenticates via an Ed25519 keypair generated locally during enrollment — it never needs or uses the IdP management token. The security boundaries are:
+
+- **Enrollment requires human approval** — the agent generates a keypair and an enrollment URL, but an admin must confirm it on the IdP before the agent becomes active
+- **Every privileged action requires a human-approved grant** — there is no way for the agent to approve its own requests
+- **Zero administrative access to the IdP** — `apes` is a client that authenticates and requests grants; it cannot create users, manage agents, or modify the IdP configuration
+- **The agent's private key is not exportable** — it is generated on the machine and stored with root-only permissions (`/etc/apes/agent.key`)
+
 ## Prerequisites
 
 - **Rust toolchain** (stable, 1.70+) — install via [rustup](https://rustup.rs)
