@@ -32,6 +32,12 @@ pub enum Error {
     #[error("Command not found: {0}")]
     NotFound(String),
 
+    #[error("Key does not match any registered agent")]
+    NoMatchingAgent,
+
+    #[error("Legacy config format detected. Migrate to multi-agent format: remove top-level agent_id/key_path/server_url, add [[agents]] array. See README.md")]
+    LegacyConfig,
+
     #[error("Wrong key type: expected Ed25519")]
     WrongKeyType,
 
@@ -51,7 +57,7 @@ pub enum Error {
 impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Config(_) | Error::ConfigNotFound(_) => 1,
+            Error::Config(_) | Error::ConfigNotFound(_) | Error::NoMatchingAgent | Error::LegacyConfig => 1,
             Error::Auth(_) | Error::WrongKeyType => 2,
             Error::Denied { .. } => 3,
             Error::Timeout { .. } => 4,
@@ -90,6 +96,12 @@ impl Error {
             }
             Error::NotFound(cmd) => {
                 serde_json::json!({"error": "not_found", "command": cmd})
+            }
+            Error::NoMatchingAgent => {
+                serde_json::json!({"error": "no_matching_agent", "message": self.to_string()})
+            }
+            Error::LegacyConfig => {
+                serde_json::json!({"error": "legacy_config", "message": self.to_string()})
             }
             _ => {
                 serde_json::json!({"error": "internal", "message": self.to_string()})

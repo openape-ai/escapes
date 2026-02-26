@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
 use crate::error::Error;
 
 #[derive(Debug, Serialize)]
@@ -50,14 +49,14 @@ pub struct TokenResponse {
 
 /// Create a new grant request.
 pub fn create_grant(
-    config: &Config,
+    server_url: &str,
     agent_token: &str,
     target: &str,
     command: &[String],
     cmd_hash: &str,
     reason: Option<&str>,
 ) -> Result<Grant, Error> {
-    let url = format!("{}/api/grants", config.server_url);
+    let url = format!("{server_url}/api/grants");
     let body = CreateGrantRequest {
         requester: String::new(), // server overrides with agent identity
         target: target.to_string(),
@@ -79,13 +78,13 @@ pub fn create_grant(
 
 /// Poll for grant approval until approved, denied, or timeout.
 pub fn poll_grant(
-    config: &Config,
+    server_url: &str,
     agent_token: &str,
     grant_id: &str,
     timeout_secs: u64,
     interval_secs: u64,
 ) -> Result<Grant, Error> {
-    let url = format!("{}/api/grants/{}", config.server_url, grant_id);
+    let url = format!("{server_url}/api/grants/{grant_id}");
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
     let interval = Duration::from_secs(interval_secs);
@@ -125,11 +124,11 @@ pub fn poll_grant(
 
 /// Get the authorization token for an approved grant.
 pub fn get_token(
-    config: &Config,
+    server_url: &str,
     agent_token: &str,
     grant_id: &str,
 ) -> Result<TokenResponse, Error> {
-    let url = format!("{}/api/grants/{}/token", config.server_url, grant_id);
+    let url = format!("{server_url}/api/grants/{grant_id}/token");
 
     let resp: TokenResponse = ureq::post(&url)
         .set("Authorization", &format!("Bearer {agent_token}"))

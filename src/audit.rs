@@ -12,6 +12,7 @@ use crate::grants::Grant;
 /// prevent the command from running.
 pub fn log_run(
     config: &Config,
+    agent_id: &str,
     real_uid: Uid,
     cmd: &[String],
     cmd_hash: &str,
@@ -25,7 +26,7 @@ pub fn log_run(
         "cmd_hash": cmd_hash,
         "grant_id": grant.id,
         "grant_type": grant.request.grant_type,
-        "agent_id": config.agent_id,
+        "agent_id": agent_id,
         "decided_by": grant.decided_by,
         "target": config.effective_target(),
         "cwd": std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default(),
@@ -37,6 +38,7 @@ pub fn log_run(
 /// Write an audit log entry for a denied grant.
 pub fn log_denied(
     config: &Config,
+    agent_id: &str,
     real_uid: Uid,
     cmd: &[String],
     cmd_hash: &str,
@@ -50,7 +52,7 @@ pub fn log_denied(
         "command": cmd,
         "cmd_hash": cmd_hash,
         "grant_id": grant_id,
-        "agent_id": config.agent_id,
+        "agent_id": agent_id,
         "decided_by": decided_by,
         "target": config.effective_target(),
     });
@@ -61,6 +63,7 @@ pub fn log_denied(
 /// Write an audit log entry for a timeout.
 pub fn log_timeout(
     config: &Config,
+    agent_id: &str,
     real_uid: Uid,
     cmd: &[String],
     cmd_hash: &str,
@@ -74,7 +77,7 @@ pub fn log_timeout(
         "command": cmd,
         "cmd_hash": cmd_hash,
         "grant_id": grant_id,
-        "agent_id": config.agent_id,
+        "agent_id": agent_id,
         "target": config.effective_target(),
         "timeout_secs": secs,
     });
@@ -85,6 +88,7 @@ pub fn log_timeout(
 /// Write an audit log entry for an error.
 pub fn log_error(
     config: &Config,
+    agent_id: &str,
     real_uid: Uid,
     cmd: &[String],
     message: &str,
@@ -94,7 +98,7 @@ pub fn log_error(
         "event": "error",
         "real_uid": real_uid.as_raw(),
         "command": cmd,
-        "agent_id": config.agent_id,
+        "agent_id": agent_id,
         "target": config.effective_target(),
         "message": message,
     });
@@ -129,17 +133,19 @@ fn write_entry(config: &Config, entry: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::config::{AgentConfig, PollConfig, TlsConfig};
 
     fn test_config(dir: &std::path::Path) -> Config {
         Config {
-            server_url: "https://test.example.com".into(),
-            agent_id: "test-agent".into(),
-            key_path: PathBuf::from("/dev/null"),
             target: Some("test-target".into()),
             audit_log: Some(dir.join("audit.log")),
-            poll: crate::config::PollConfig::default(),
-            tls: crate::config::TlsConfig::default(),
+            poll: PollConfig::default(),
+            tls: TlsConfig::default(),
+            agents: vec![AgentConfig {
+                name: "test-agent".into(),
+                public_key: "ssh-ed25519 AAAA".into(),
+                server_url: "https://test.example.com".into(),
+            }],
         }
     }
 

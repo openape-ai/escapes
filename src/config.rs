@@ -6,18 +6,42 @@ use crate::error::Error;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub struct Config {
+pub struct AgentConfig {
+    pub name: String,
+    pub public_key: String,
     pub server_url: String,
-    pub agent_id: String,
-    pub key_path: PathBuf,
+}
+
+/// Raw deserialization target that can detect legacy format.
+#[derive(Debug, Deserialize)]
+struct RawConfig {
+    // Legacy fields — presence triggers LegacyConfig error
+    agent_id: Option<String>,
+    key_path: Option<PathBuf>,
+    server_url: Option<String>,
+
+    // Current fields
+    target: Option<String>,
+    audit_log: Option<PathBuf>,
+
+    #[serde(default)]
+    poll: PollConfig,
+
+    #[serde(default)]
+    tls: TlsConfig,
+
+    #[serde(default)]
+    agents: Vec<AgentConfig>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct Config {
     pub target: Option<String>,
     pub audit_log: Option<PathBuf>,
-
-    #[serde(default)]
     pub poll: PollConfig,
-
-    #[serde(default)]
     pub tls: TlsConfig,
+    pub agents: Vec<AgentConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,27 +84,46 @@ impl Config {
         let content = std::fs::read_to_string(path)
             .map_err(|e| Error::Config(format!("Failed to read {}: {e}", path.display())))?;
 
-        let config: Config = toml::from_str(&content)
+        let raw: RawConfig = toml::from_str(&content)
             .map_err(|e| Error::Config(format!("Failed to parse {}: {e}", path.display())))?;
+
+        // Detect legacy single-agent format
+        if raw.agent_id.is_some() || raw.key_path.is_some() || (raw.server_url.is_some() && raw.agents.is_empty()) {
+            return Err(Error::LegacyConfig);
+        }
+
+        let config = Config {
+            target: raw.target,
+            audit_log: raw.audit_log,
+            poll: raw.poll,
+            tls: raw.tls,
+            agents: raw.agents,
+        };
 
         config.validate()?;
         Ok(config)
     }
 
     fn validate(&self) -> Result<(), Error> {
-        if self.server_url.is_empty() {
-            return Err(Error::Config("server_url is required".into()));
+        if self.agents.is_empty() {
+            return Err(Error::Config("No agents configured. Add at least one [[agents]] entry.".into()));
         }
-        if self.agent_id.is_empty() {
-            return Err(Error::Config("agent_id is required".into()));
-        }
-        if !self.key_path.exists() {
-            return Err(Error::Config(format!(
-                "Key file not found: {}",
-                self.key_path.display()
-            )));
+        for agent in &self.agents {
+            if agent.name.is_empty() {
+                return Err(Error::Config("Agent name is required".into()));
+            }
+            if agent.public_key.is_empty() {
+                return Err(Error::Config(format!("Agent '{}': public_key is required", agent.name)));
+            }
+            if agent.server_url.is_empty() {
+                return Err(Error::Config(format!("Agent '{}': server_url is required", agent.name)));
+            }
         }
         Ok(())
+    }
+
+    pub fn find_agent_by_public_key(&self, public_key: &str) -> Option<&AgentConfig> {
+        self.agents.iter().find(|a| a.public_key == public_key)
     }
 
     pub fn effective_target(&self) -> String {
@@ -104,9 +147,74 @@ mod tests {
     #[test]
     fn test_parse_valid_config() {
         let dir = tempfile::tempdir().unwrap();
-        let key_path = dir.path().join("agent.key");
-        std::fs::write(&key_path, "dummy-key").unwrap();
 
+        let config_path = dir.path().join("config.toml");
+        let mut f = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            f,
+            r#"
+target = "my-server"
+
+[poll]
+interval_secs = 5
+timeout_secs = 120
+
+[[agents]]
+name = "web-deploy"
+public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest"
+server_url = "https://id.example.com"
+
+[[agents]]
+name = "system-admin"
+public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOther"
+server_url = "https://id.example.com"
+"#
+        )
+        .unwrap();
+
+        let config = Config::load(&config_path).unwrap();
+        assert_eq!(config.agents.len(), 2);
+        assert_eq!(config.agents[0].name, "web-deploy");
+        assert_eq!(config.agents[1].name, "system-admin");
+        assert_eq!(config.poll.interval_secs, 5);
+        assert_eq!(config.poll.timeout_secs, 120);
+        assert_eq!(config.effective_target(), "my-server");
+    }
+
+    #[test]
+    fn test_find_agent_by_public_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        let mut f = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            f,
+            r#"
+[[agents]]
+name = "deploy"
+public_key = "ssh-ed25519 AAAA"
+server_url = "https://id.example.com"
+
+[[agents]]
+name = "admin"
+public_key = "ssh-ed25519 BBBB"
+server_url = "https://id2.example.com"
+"#
+        )
+        .unwrap();
+
+        let config = Config::load(&config_path).unwrap();
+
+        let agent = config.find_agent_by_public_key("ssh-ed25519 BBBB");
+        assert!(agent.is_some());
+        assert_eq!(agent.unwrap().name, "admin");
+        assert_eq!(agent.unwrap().server_url, "https://id2.example.com");
+
+        assert!(config.find_agent_by_public_key("ssh-ed25519 CCCC").is_none());
+    }
+
+    #[test]
+    fn test_legacy_config_detected() {
+        let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("config.toml");
         let mut f = std::fs::File::create(&config_path).unwrap();
         writeln!(
@@ -114,19 +222,25 @@ mod tests {
             r#"
 server_url = "https://id.example.com"
 agent_id = "test-uuid"
-key_path = "{}"
-target = "my-server"
-"#,
-            key_path.display()
+key_path = "/dev/null"
+"#
         )
         .unwrap();
 
-        let config = Config::load(&config_path).unwrap();
-        assert_eq!(config.server_url, "https://id.example.com");
-        assert_eq!(config.agent_id, "test-uuid");
-        assert_eq!(config.poll.interval_secs, 2);
-        assert_eq!(config.poll.timeout_secs, 300);
-        assert_eq!(config.effective_target(), "my-server");
+        let result = Config::load(&config_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, Error::LegacyConfig));
+    }
+
+    #[test]
+    fn test_empty_agents_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(&config_path, "target = \"test\"\n").unwrap();
+
+        let result = Config::load(&config_path);
+        assert!(result.is_err());
     }
 
     #[test]

@@ -12,6 +12,10 @@ pub struct Cli {
     #[arg(long, default_value = "/etc/apes/config.toml")]
     pub config: PathBuf,
 
+    /// Path to the agent's private key file
+    #[arg(long)]
+    pub key: Option<PathBuf>,
+
     /// Poll timeout in seconds (overrides config)
     #[arg(long)]
     pub timeout: Option<u64>,
@@ -27,7 +31,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Enroll this machine as an OpenApe agent
+    /// Enroll an agent on this machine
     Enroll {
         /// OpenApe IdP URL
         #[arg(long)]
@@ -37,8 +41,12 @@ pub enum Commands {
         #[arg(long)]
         agent_email: String,
 
-        /// Agent display name (defaults to hostname)
+        /// Agent display name
         #[arg(long)]
-        agent_name: Option<String>,
+        agent_name: String,
+
+        /// Path to the agent's private key file (generated if it doesn't exist)
+        #[arg(long)]
+        key: PathBuf,
     },
 }

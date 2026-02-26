@@ -7,9 +7,16 @@ use ssh_key::PrivateKey;
 
 use crate::error::Error;
 
-/// Load an Ed25519 signing key from an OpenSSH private key file.
-/// Must be called while still root (key file is 0600 root-owned).
-pub fn load_signing_key(key_path: &Path) -> Result<SigningKey, Error> {
+/// Sign a challenge with a pre-loaded signing key.
+/// Returns the signature as base64 (matching the server's expected format).
+pub fn sign_challenge(signing_key: &SigningKey, challenge: &str) -> String {
+    let signature = signing_key.sign(challenge.as_bytes());
+    base64::engine::general_purpose::STANDARD.encode(signature.to_bytes())
+}
+
+/// Load a private key and derive the public key in OpenSSH format.
+/// Must be called as the real user (after privilege drop) since the key is user-owned.
+pub fn load_key_and_derive_public(key_path: &Path) -> Result<(SigningKey, String), Error> {
     let ssh_key = PrivateKey::read_openssh_file(key_path)
         .map_err(|e| Error::Auth(format!("Failed to read key {}: {e}", key_path.display())))?;
 
@@ -19,14 +26,21 @@ pub fn load_signing_key(key_path: &Path) -> Result<SigningKey, Error> {
         .ok_or(Error::WrongKeyType)?;
 
     let secret_bytes: &[u8; 32] = ed25519_keypair.private.as_ref();
-    Ok(SigningKey::from_bytes(secret_bytes))
+    let signing_key = SigningKey::from_bytes(secret_bytes);
+
+    let public_key = ssh_key
+        .public_key()
+        .to_openssh()
+        .map_err(|e| Error::Auth(format!("Failed to export public key: {e}")))?;
+
+    Ok((signing_key, public_key))
 }
 
-/// Sign a challenge with a pre-loaded signing key.
-/// Returns the signature as base64 (matching the server's expected format).
-pub fn sign_challenge(signing_key: &SigningKey, challenge: &str) -> String {
-    let signature = signing_key.sign(challenge.as_bytes());
-    base64::engine::general_purpose::STANDARD.encode(signature.to_bytes())
+/// Derive agent_id from a public key string: sha256(public_key) as hex.
+pub fn derive_agent_id(public_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(public_key.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Compute SHA-256 hash of a command and its arguments.
@@ -56,5 +70,21 @@ mod tests {
         let cmd1 = vec!["ls".to_string()];
         let cmd2 = vec!["pwd".to_string()];
         assert_ne!(cmd_hash(&cmd1), cmd_hash(&cmd2));
+    }
+
+    #[test]
+    fn test_derive_agent_id_deterministic() {
+        let pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest";
+        let id1 = derive_agent_id(pubkey);
+        let id2 = derive_agent_id(pubkey);
+        assert_eq!(id1, id2);
+        assert_eq!(id1.len(), 64); // SHA-256 hex = 64 chars
+    }
+
+    #[test]
+    fn test_derive_agent_id_differs_for_different_keys() {
+        let id1 = derive_agent_id("ssh-ed25519 AAAA");
+        let id2 = derive_agent_id("ssh-ed25519 BBBB");
+        assert_ne!(id1, id2);
     }
 }

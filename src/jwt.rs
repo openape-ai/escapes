@@ -1,7 +1,6 @@
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 
-use crate::config::Config;
 use crate::error::Error;
 
 #[derive(Debug, Deserialize)]
@@ -21,7 +20,7 @@ pub struct AuthzClaims {
 
 /// Verify an AuthZ-JWT by fetching the JWKS from the IdP and validating
 /// the token signature (ES256) and claims.
-pub fn verify_authz_jwt(token: &str, config: &Config) -> Result<AuthzClaims, Error> {
+pub fn verify_authz_jwt(token: &str, server_url: &str) -> Result<AuthzClaims, Error> {
     // Decode header to get kid
     let header = decode_header(token)
         .map_err(|e| Error::Jwt(format!("Failed to decode JWT header: {e}")))?;
@@ -31,7 +30,7 @@ pub fn verify_authz_jwt(token: &str, config: &Config) -> Result<AuthzClaims, Err
         .ok_or_else(|| Error::Jwt("JWT header missing kid".into()))?;
 
     // Fetch JWKS from server
-    let jwks_url = format!("{}/.well-known/jwks.json", config.server_url);
+    let jwks_url = format!("{server_url}/.well-known/jwks.json");
     let jwks: JwkSet = ureq::get(&jwks_url)
         .call()
         .map_err(|e| Error::Jwt(format!("Failed to fetch JWKS: {e}")))?
@@ -57,10 +56,9 @@ pub fn verify_authz_jwt(token: &str, config: &Config) -> Result<AuthzClaims, Err
         .map_err(|e| Error::Jwt(format!("JWT verification failed: {e}")))?;
 
     // Validate issuer matches server
-    let expected_issuer = &config.server_url;
-    if token_data.claims.iss != *expected_issuer {
+    if token_data.claims.iss != server_url {
         return Err(Error::Jwt(format!(
-            "Issuer mismatch: expected {expected_issuer}, got {}",
+            "Issuer mismatch: expected {server_url}, got {}",
             token_data.claims.iss
         )));
     }

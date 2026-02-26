@@ -3,7 +3,7 @@
 `apes` is a setuid-root binary that replaces traditional `sudo` with a grant-based approval workflow. Instead of a password, each privileged command requires real-time approval from an admin through an [OpenApe](https://docs.openape.at) Identity Provider (IdP).
 
 ```
-User runs:  apes -- systemctl restart nginx
+User runs:  apes --key ~/.apes/keys/deploy.key -- systemctl restart nginx
                 │
                 ▼
          ┌─────────────┐     challenge/response     ┌────────────────┐
@@ -19,21 +19,26 @@ User runs:  apes -- systemctl restart nginx
 
 **Key properties:**
 
+- **Multi-agent support** — multiple agents per machine, each with their own keypair and IdP
 - Ed25519 challenge-response authentication (no passwords stored)
 - Every command is individually approved or denied by an admin
 - JWT-based authorization with cmd_hash integrity check
-- Privileges are dropped for all network I/O, re-elevated only after verification
+- **User-owned keys** — private keys belong to the user, not root
+- Privileges are dropped *before* key loading; re-elevated only after verification
 - Environment is sanitized before exec (LD_PRELOAD, PATH, etc.)
 - Full audit log in JSONL format
 
 ### Security Model
 
-`apes` authenticates via an Ed25519 keypair generated locally during enrollment — it never needs or uses the IdP management token. The security boundaries are:
+Each agent is an Ed25519 keypair owned by the user who operates it. The user provides their key via `--key <path>` — possessing the key IS the authorization. Agent identity is derived at runtime: `agent_id = sha256(public_key)`.
 
-- **Enrollment requires human approval** — the agent generates a keypair and an enrollment URL, but an admin must confirm it on the IdP before the agent becomes active
+The security boundaries are:
+
+- **Enrollment requires human approval** — the agent's public key is registered in the config and an enrollment URL is generated, but an admin must confirm it on the IdP before the agent becomes active
 - **Every privileged action requires a human-approved grant** — there is no way for the agent to approve its own requests
 - **Zero administrative access to the IdP** — `apes` is a client that authenticates and requests grants; it cannot create users, manage agents, or modify the IdP configuration
-- **The agent's private key is not exportable** — it is generated on the machine and stored with root-only permissions (`/etc/apes/agent.key`)
+- **User-owned keys** — private keys are stored by the user (e.g. `~/.apes/keys/`), not in root-owned paths. Privilege drop happens before key loading
+- **Config is root-owned** — `/etc/apes/config.toml` lists registered agents (public keys only); only root can modify it
 
 ## Prerequisites
 
@@ -71,97 +76,115 @@ sudo install -m 4755 -o root target/release/apes /usr/local/bin/apes
 
 ## Enrollment
 
-Enrollment registers this machine as an agent with your OpenApe IdP. Run this once per machine:
+Enrollment registers an agent on this machine. Each agent is a keypair + config entry. You can enroll multiple agents on the same machine.
 
 ```bash
-sudo apes enroll --server https://id.example.com --agent-email server01@example.com
+sudo apes enroll \
+  --server https://id.example.com \
+  --agent-email server01@example.com \
+  --agent-name web-deploy \
+  --key ~/.apes/keys/deploy.key
 ```
-
-The `--agent-email` is used as the agent's identifier on the IdP. Optionally pass `--agent-name` to set a display name (defaults to the machine's hostname).
 
 ### What happens
 
-1. `apes` generates an Ed25519 keypair and writes it to `/etc/apes/agent.key`
-2. A `config.toml` is written to `/etc/apes/config.toml` with the server URL, a new agent UUID, and the key path
-3. The output includes an enrollment URL:
+1. `apes` drops privileges to the real user
+2. If the key file doesn't exist: generates an Ed25519 keypair and writes it to the given path (as the user)
+3. If the key file exists: loads it
+4. Derives the public key from the private key
+5. Re-elevates to root and appends an `[[agents]]` entry to `/etc/apes/config.toml`
+6. Drops back to the real user
+7. The output includes an enrollment URL:
 
 ```
   Agent enrolled locally.
 
-  Agent ID:    a1b2c3d4-...
-  Agent Name:  server01
+  Agent Name:  web-deploy
+  Agent ID:    a1b2c3d4e5f6...  (sha256 of public key)
   Config:      /etc/apes/config.toml
-  Key:         /etc/apes/agent.key
+  Key:         /home/user/.apes/keys/deploy.key
   Public Key:  ssh-ed25519 AAAA...
 
   Share this URL with your admin to complete enrollment:
-  https://id.example.com/enroll?email=server01@example.com&name=server01&key=ssh-ed25519%20AAAA...&id=a1b2c3d4-...
+  https://id.example.com/enroll?email=server01@example.com&name=web-deploy&key=ssh-ed25519%20AAAA...&id=a1b2c3d4...
 
   The agent is ready to use once the admin approves.
 ```
 
-4. Copy the enrollment URL and open it in a browser
-5. An admin logs into the IdP and confirms the agent
-6. The agent is now active and can request grants
+8. Copy the enrollment URL and open it in a browser
+9. An admin logs into the IdP and confirms the agent
+10. The agent is now active and can request grants
+
+### Enrolling multiple agents
+
+```bash
+# Web deployment agent
+sudo apes enroll --server https://id.example.com --agent-email deploy@example.com --agent-name web-deploy --key ~/.apes/keys/deploy.key
+
+# System admin agent (can point to a different IdP)
+sudo apes enroll --server https://id2.example.com --agent-email admin@example.com --agent-name system-admin --key ~/.apes/keys/admin.key
+```
+
+Each enrollment appends a new `[[agents]]` block to the config.
 
 ## Usage
 
 Run any command with privilege elevation:
 
 ```bash
-apes -- systemctl restart nginx
+apes --key ~/.apes/keys/deploy.key -- systemctl restart nginx
 ```
 
 With a reason (visible to the admin in the approval UI):
 
 ```bash
-apes --reason "deploy v2.1" -- systemctl restart app
+apes --key ~/.apes/keys/deploy.key --reason "deploy v2.1" -- systemctl restart app
 ```
 
 Override the poll timeout (in seconds):
 
 ```bash
-apes --timeout 60 -- apt update
+apes --key ~/.apes/keys/deploy.key --timeout 60 -- apt update
 ```
 
 Use a custom config file:
 
 ```bash
-apes --config /path/to/config.toml -- whoami
+apes --config /path/to/config.toml --key ~/.apes/keys/deploy.key -- whoami
 ```
 
 ### What happens when you run a command
 
-1. `apes` loads the config and signing key (as root)
-2. Computes a SHA-256 hash of the command
-3. **Drops privileges** to the real user's UID
-4. Authenticates with the IdP via Ed25519 challenge-response
-5. Creates a grant request (includes command, cmd_hash, target, optional reason)
-6. Polls the IdP for approval:
-   ```
-   ⏳ Waiting for approval… (grant a1b2c3d4)
-      Approve at: id.example.com
-   ```
-7. On approval: receives a JWT containing the cmd_hash
-8. Verifies the JWT locally and checks that the cmd_hash matches
-9. **Re-elevates** to root
-10. Sanitizes the environment (removes `LD_PRELOAD`, `LD_LIBRARY_PATH`, etc.; resets `PATH`)
-11. Writes an audit log entry
-12. Replaces the process with the command via `execvp`
+1. `apes` loads the config (as root — `/etc/apes/config.toml` is root-owned)
+2. **Drops privileges** to the real user's UID
+3. Loads the private key from `--key` (as the real user — key is user-owned)
+4. Derives the public key from the private key
+5. Matches the public key against registered agents in the config
+6. If no match: error `NoMatchingAgent` (exit code 1)
+7. Derives `agent_id = sha256(public_key)`
+8. Computes a SHA-256 hash of the command
+9. Authenticates with the matched agent's IdP via Ed25519 challenge-response
+10. Creates a grant request (includes command, cmd_hash, target, optional reason)
+11. Polls the IdP for approval:
+    ```
+    waiting for approval… (grant a1b2c3d4)
+       approve at: id.example.com
+    ```
+12. On approval: receives a JWT containing the cmd_hash
+13. Verifies the JWT locally and checks that the cmd_hash matches
+14. **Re-elevates** to root
+15. Sanitizes the environment (removes `LD_PRELOAD`, `LD_LIBRARY_PATH`, etc.; resets `PATH`)
+16. Writes an audit log entry
+17. Replaces the process with the command via `execvp`
 
-If denied: `apes` prints `Denied by <admin>` and exits with code 3.
-If no response within the timeout: prints `Timed out after <N>s` and exits with code 4.
+If denied: `apes` prints `denied by <admin>` and exits with code 3.
+If no response within the timeout: prints `timed out after <N>s` and exits with code 4.
 
 ## Configuration Reference
 
-After enrollment, the config lives at `/etc/apes/config.toml` (permissions `0600`, owned by root).
+After enrollment, the config lives at `/etc/apes/config.toml` (permissions `0644`, owned by root).
 
 ```toml
-# Required
-server_url = "https://id.example.com"
-agent_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-key_path = "/etc/apes/agent.key"
-
 # Optional — override hostname as the target identifier
 # target = "server01"
 
@@ -177,33 +200,62 @@ timeout_secs = 300
 [tls]
 # Custom CA bundle for self-signed certificates
 # ca_bundle = "/etc/apes/ca.pem"
+
+[[agents]]
+name = "web-deploy"
+public_key = "ssh-ed25519 AAAA..."
+server_url = "https://id.example.com"
+
+[[agents]]
+name = "system-admin"
+public_key = "ssh-ed25519 BBBB..."
+server_url = "https://id2.example.com"
 ```
 
 ### Fields
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `server_url` | yes | — | OpenApe IdP base URL |
-| `agent_id` | yes | — | Agent UUID (set during enrollment) |
-| `key_path` | yes | — | Path to Ed25519 private key |
 | `target` | no | hostname | Machine identifier shown in grant requests |
 | `audit_log` | no | `/var/log/apes/audit.log` | Path to the JSONL audit log |
 | `poll.interval_secs` | no | `2` | Poll interval in seconds |
 | `poll.timeout_secs` | no | `300` | Poll timeout in seconds (5 minutes) |
 | `tls.ca_bundle` | no | system default | Custom CA bundle path |
+| `agents[].name` | yes | — | Agent display name |
+| `agents[].public_key` | yes | — | Agent's public key (OpenSSH format) |
+| `agents[].server_url` | yes | — | OpenApe IdP URL for this agent |
+
+### Migrating from single-agent format
+
+If you have an old config with top-level `server_url`, `agent_id`, and `key_path`, `apes` will detect it and print a `LegacyConfig` error with migration instructions. Convert your config to the new format:
+
+**Old format:**
+```toml
+server_url = "https://id.example.com"
+agent_id = "a1b2c3d4-..."
+key_path = "/etc/apes/agent.key"
+```
+
+**New format:**
+```toml
+[[agents]]
+name = "my-agent"
+public_key = "ssh-ed25519 AAAA..."  # extract from old key file
+server_url = "https://id.example.com"
+```
 
 ## Connecting to a Local vs Remote IdP
 
 For **development**, point at your local instance:
 
 ```bash
-sudo apes enroll --server http://localhost:3000 --agent-email dev@localhost
+sudo apes enroll --server http://localhost:3000 --agent-email dev@localhost --agent-name dev --key ~/.apes/keys/dev.key
 ```
 
 For **production**, use the HTTPS URL of your IdP:
 
 ```bash
-sudo apes enroll --server https://id.example.com --agent-email server01@example.com
+sudo apes enroll --server https://id.example.com --agent-email server01@example.com --agent-name prod-deploy --key ~/.apes/keys/deploy.key
 ```
 
 If your IdP uses a **self-signed certificate**, add the CA bundle to the config after enrollment:
@@ -225,7 +277,7 @@ The directory is created automatically if it doesn't exist. The log is append-on
 
 **`run`** — command approved and executed:
 ```json
-{"ts":"2026-01-15T10:30:00Z","event":"run","real_uid":1000,"command":["systemctl","restart","nginx"],"cmd_hash":"ab12...","grant_id":"...","grant_type":"once","agent_id":"...","decided_by":"admin@example.com","target":"server01","cwd":"/home/user"}
+{"ts":"2026-01-15T10:30:00Z","event":"run","real_uid":1000,"command":["systemctl","restart","nginx"],"cmd_hash":"ab12...","grant_id":"...","grant_type":"once","agent_id":"sha256-derived-id","decided_by":"admin@example.com","target":"server01","cwd":"/home/user"}
 ```
 
 **`denied`** — grant denied by admin:
@@ -248,11 +300,11 @@ The directory is created automatically if it doesn't exist. The log is append-on
 | Code | Meaning |
 |------|---------|
 | 0 | Success (command ran) |
-| 1 | Configuration error, HTTP error, I/O error, or JSON parse error |
+| 1 | Configuration error, HTTP error, I/O error, JSON parse error, no matching agent, or legacy config |
 | 2 | Authentication failure or wrong key type |
 | 3 | Grant denied |
 | 4 | Grant timed out (no approval within timeout) |
-| 5 | JWT verification failed or cmd_hash mismatch |
+| 5 | JWT verification failed, cmd_hash mismatch, or public key mismatch |
 | 126 | Exec failed or privilege elevation error |
 | 127 | Command not found |
 
@@ -262,7 +314,7 @@ The directory is created automatically if it doesn't exist. The log is append-on
 sudo make uninstall
 ```
 
-This removes `/usr/local/bin/apes`. To also remove the agent config and key:
+This removes `/usr/local/bin/apes`. To also remove the agent config:
 
 ```bash
 sudo rm -rf /etc/apes
