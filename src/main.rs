@@ -140,6 +140,11 @@ fn run_sudo(cli: &Cli) -> Result<(), Error> {
     // 14. Sanitize environment
     exec::sanitize_env();
 
+    // 14b. Switch user if --run-as was specified
+    if let Some(ref run_as) = cli.run_as {
+        exec::switch_user(run_as)?;
+    }
+
     // 15. Write audit log
     audit::log_run(
         &config,

@@ -16,6 +16,10 @@ pub struct Cli {
     #[arg(long)]
     pub key: Option<PathBuf>,
 
+    /// Run the command as a different user (e.g. --run-as testuser)
+    #[arg(long)]
+    pub run_as: Option<String>,
+
     /// Poll timeout in seconds (overrides config)
     #[arg(long)]
     pub timeout: Option<u64>,

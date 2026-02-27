@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use nix::unistd::{geteuid, getuid, seteuid, Uid};
+use nix::unistd::{geteuid, getuid, setgid, seteuid, setuid, Uid, User};
 
 use crate::error::Error;
 
@@ -22,6 +22,32 @@ pub fn drop_privileges() -> Result<Uid, Error> {
 pub fn elevate() -> Result<(), Error> {
     seteuid(Uid::from_raw(0))
         .map_err(|e| Error::Privilege(format!("Failed to elevate privileges: {e}")))?;
+    Ok(())
+}
+
+/// Switch to a different user (must be called while euid is root).
+/// Sets GID first, then UID (order matters — can't setgid after dropping root).
+/// This is a one-way operation: the process cannot return to root.
+pub fn switch_user(username: &str) -> Result<(), Error> {
+    let user = User::from_name(username)
+        .map_err(|e| Error::Privilege(format!("Failed to look up user '{username}': {e}")))?
+        .ok_or_else(|| Error::Privilege(format!("User '{username}' not found")))?;
+
+    // Set GID first (requires root)
+    setgid(user.gid)
+        .map_err(|e| Error::Privilege(format!("Failed to setgid({}): {e}", user.gid)))?;
+
+    // Set UID (irreversible — drops root permanently)
+    setuid(user.uid)
+        .map_err(|e| Error::Privilege(format!("Failed to setuid({}): {e}", user.uid)))?;
+
+    // Set HOME and USER env vars
+    unsafe {
+        std::env::set_var("HOME", user.dir.to_string_lossy().as_ref());
+        std::env::set_var("USER", username);
+        std::env::set_var("LOGNAME", username);
+    }
+
     Ok(())
 }
 
