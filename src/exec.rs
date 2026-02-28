@@ -27,13 +27,17 @@ pub fn elevate() -> Result<(), Error> {
 
 /// Make the process fully root (real + effective UID/GID).
 /// Called when no --run-as is specified — the default for privilege elevation.
+/// Make the process fully root (real + effective UID/GID).
+/// Preserves HOME from the calling user so tools like rustup/cargo keep working.
 pub fn become_root() -> Result<(), Error> {
     setgid(nix::unistd::Gid::from_raw(0))
         .map_err(|e| Error::Privilege(format!("Failed to setgid(0): {e}")))?;
     setuid(Uid::from_raw(0))
         .map_err(|e| Error::Privilege(format!("Failed to setuid(0): {e}")))?;
+    // Keep HOME from the calling user — tools like rustup, cargo, bun
+    // store their config under $HOME and break if switched to /var/root.
+    // USER/LOGNAME reflect actual privilege level.
     unsafe {
-        std::env::set_var("HOME", "/var/root");
         std::env::set_var("USER", "root");
         std::env::set_var("LOGNAME", "root");
     }
