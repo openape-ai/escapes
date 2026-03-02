@@ -6,7 +6,7 @@
 User runs:  apes --key ~/.apes/keys/deploy.key -- systemctl restart nginx
                 │
                 ▼
-         ┌─────────────┐     challenge/response     ┌────────────────┐
+         ┌─────────────┐     challenge/response      ┌────────────────┐
          │  apes agent  │ ◄─────────────────────────►│  OpenApe IdP   │
          │  (setuid)    │ ── create grant ──────────►│  (nuxt-grants) │
          │              │ ── poll status ───────────►│                │
@@ -322,4 +322,4 @@ sudo rm -rf /etc/apes
 
 ## License
 
-MIT
+AGPL-3.0-or-later
