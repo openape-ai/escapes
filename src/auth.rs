@@ -32,11 +32,11 @@ pub struct AuthenticateResponse {
 
 /// Perform challenge-response authentication against the IdP.
 /// Returns the agent JWT token.
-pub fn authenticate(server_url: &str, agent_id: &str, signing_key: &SigningKey) -> Result<String, Error> {
+pub fn authenticate(server_url: &str, agent_email: &str, signing_key: &SigningKey) -> Result<String, Error> {
     // Step 1: Request challenge
     let challenge_url = format!("{server_url}/api/agent/challenge");
     let challenge_body = ChallengeRequest {
-        agent_id: agent_id.to_string(),
+        agent_id: agent_email.to_string(),
     };
 
     let challenge_resp: ChallengeResponse = ureq::post(&challenge_url)
@@ -51,7 +51,7 @@ pub fn authenticate(server_url: &str, agent_id: &str, signing_key: &SigningKey) 
     // Step 3: Authenticate with signature
     let auth_url = format!("{server_url}/api/agent/authenticate");
     let auth_body = AuthenticateRequest {
-        agent_id: agent_id.to_string(),
+        agent_id: agent_email.to_string(),
         challenge: challenge_resp.challenge,
         signature,
     };

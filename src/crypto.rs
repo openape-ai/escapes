@@ -36,13 +36,6 @@ pub fn load_key_and_derive_public(key_path: &Path) -> Result<(SigningKey, String
     Ok((signing_key, public_key))
 }
 
-/// Derive agent_id from a public key string: sha256(public_key) as hex.
-pub fn derive_agent_id(public_key: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(public_key.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
 /// Compute SHA-256 hash of a command and its arguments.
 /// Format: hash of space-joined command parts.
 pub fn cmd_hash(cmd: &[String]) -> String {
@@ -72,19 +65,4 @@ mod tests {
         assert_ne!(cmd_hash(&cmd1), cmd_hash(&cmd2));
     }
 
-    #[test]
-    fn test_derive_agent_id_deterministic() {
-        let pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest";
-        let id1 = derive_agent_id(pubkey);
-        let id2 = derive_agent_id(pubkey);
-        assert_eq!(id1, id2);
-        assert_eq!(id1.len(), 64); // SHA-256 hex = 64 chars
-    }
-
-    #[test]
-    fn test_derive_agent_id_differs_for_different_keys() {
-        let id1 = derive_agent_id("ssh-ed25519 AAAA");
-        let id2 = derive_agent_id("ssh-ed25519 BBBB");
-        assert_ne!(id1, id2);
-    }
 }

@@ -85,6 +85,33 @@ pub fn log_timeout(
     write_entry(config, &entry);
 }
 
+/// Write an audit log entry for a grant-token mode command run.
+pub fn log_grant_run(
+    config: &Config,
+    claims: &crate::grant_mode::GrantClaims,
+    real_uid: Uid,
+    cmd: &[String],
+    cmd_hash: &str,
+) {
+    let entry = serde_json::json!({
+        "ts": Utc::now().to_rfc3339(),
+        "event": "grant_run",
+        "mode": "grant-token",
+        "real_uid": real_uid.as_raw(),
+        "command": cmd,
+        "cmd_hash": cmd_hash,
+        "grant_id": claims.grant_id,
+        "grant_type": claims.grant_type,
+        "agent": claims.sub,
+        "issuer": claims.iss,
+        "decided_by": claims.decided_by,
+        "target": config.effective_target(),
+        "cwd": std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default(),
+    });
+
+    write_entry(config, &entry);
+}
+
 /// Write an audit log entry for an error.
 pub fn log_error(
     config: &Config,
@@ -143,9 +170,12 @@ mod tests {
             tls: TlsConfig::default(),
             agents: vec![AgentConfig {
                 name: "test-agent".into(),
+                email: "agent+test@id.example.com".into(),
                 public_key: "ssh-ed25519 AAAA".into(),
                 server_url: "https://test.example.com".into(),
             }],
+            idp: crate::config::IdpConfig::default(),
+            security: crate::config::SecurityConfig::default(),
         }
     }
 

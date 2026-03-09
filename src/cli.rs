@@ -12,9 +12,21 @@ pub struct Cli {
     #[arg(long, default_value = "/etc/apes/config.toml")]
     pub config: PathBuf,
 
-    /// Path to the agent's private key file
+    /// Path to the agent's private key file (legacy mode)
     #[arg(long)]
     pub key: Option<PathBuf>,
+
+    /// Grant token JWT (new mode: agent provides pre-approved grant)
+    #[arg(long, env = "APES_GRANT")]
+    pub grant: Option<String>,
+
+    /// Read grant token from stdin
+    #[arg(long)]
+    pub grant_stdin: bool,
+
+    /// Read grant token from file
+    #[arg(long)]
+    pub grant_file: Option<PathBuf>,
 
     /// Run the command as a different user (e.g. --run-as testuser)
     #[arg(long)]
@@ -52,5 +64,31 @@ pub enum Commands {
         /// Path to the agent's private key file (generated if it doesn't exist)
         #[arg(long)]
         key: PathBuf,
+
+        /// Agent already exists on the server — only write local config, skip enrollment URL
+        #[arg(long)]
+        existing: bool,
+    },
+
+    /// Update the server URL for an already enrolled agent
+    Update {
+        /// Agent email address
+        #[arg(long)]
+        email: String,
+
+        /// New OpenApe IdP URL
+        #[arg(long)]
+        server: String,
+    },
+
+    /// Remove an enrolled agent from the local config
+    Remove {
+        /// Agent email address
+        #[arg(long)]
+        email: String,
+
+        /// Also delete the agent on the remote IdP server
+        #[arg(long)]
+        remote: bool,
     },
 }

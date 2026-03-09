@@ -4,7 +4,6 @@ use std::path::Path;
 
 use ssh_key::{Algorithm, PrivateKey};
 
-use crate::crypto;
 use crate::error::Error;
 use crate::exec;
 
@@ -21,13 +20,18 @@ const CONFIG_FILE: &str = "/etc/apes/config.toml";
 /// 5. Append [[agents]] block to config
 /// 6. Drop back to real user
 /// 7. Print enrollment URL
-pub fn run(server_url: &str, agent_email: &str, agent_name: &str, key_path: &Path) -> Result<(), Error> {
+pub fn run(server_url: &str, agent_email: &str, agent_name: &str, key_path: &Path, existing: bool) -> Result<(), Error> {
     // 1. Drop privileges — key operations happen as real user
     let _real_uid = exec::drop_privileges()?;
 
     // 2. Generate or load key
     let public_key = if key_path.exists() {
-        let (_signing_key, public_key) = crypto::load_key_and_derive_public(key_path)?;
+        let private_key = PrivateKey::read_openssh_file(key_path)
+            .map_err(|e| Error::Config(format!("Failed to read key {}: {e}", key_path.display())))?;
+        let public_key = private_key
+            .public_key()
+            .to_openssh()
+            .map_err(|e| Error::Config(format!("Failed to export public key: {e}")))?;
         eprintln!("  Using existing key: {}", key_path.display());
         public_key
     } else {
@@ -60,10 +64,7 @@ pub fn run(server_url: &str, agent_email: &str, agent_name: &str, key_path: &Pat
         public_key
     };
 
-    // 3. Derive agent_id
-    let agent_id = crypto::derive_agent_id(&public_key);
-
-    // 4. Re-elevate to root to modify global config
+    // 3. Re-elevate to root to modify global config
     exec::elevate()?;
 
     // Ensure config directory exists
@@ -73,11 +74,23 @@ pub fn run(server_url: &str, agent_email: &str, agent_name: &str, key_path: &Pat
     fs::set_permissions(CONFIG_DIR, fs::Permissions::from_mode(0o755))
         .map_err(|e| Error::Config(format!("Failed to set permissions on {CONFIG_DIR}: {e}")))?;
 
-    // 5. Append [[agents]] block to config (or create config if it doesn't exist)
+    // 4a. Duplicate guard — reject if this email is already in the config
+    if Path::new(CONFIG_FILE).exists() {
+        let existing_content = fs::read_to_string(CONFIG_FILE)
+            .map_err(|e| Error::Config(format!("Failed to read {CONFIG_FILE}: {e}")))?;
+        if existing_content.contains(agent_email) {
+            return Err(Error::Config(format!(
+                "Agent with email {agent_email} already enrolled in {CONFIG_FILE}. Use `apes update --email {agent_email} --server <new-url>` to change the server URL.",
+            )));
+        }
+    }
+
+    // 4b. Append [[agents]] block to config (or create config if it doesn't exist)
     let agent_block = format!(
         r#"
 [[agents]]
 name = "{agent_name}"
+email = "{agent_email}"
 public_key = "{public_key}"
 server_url = "{server_url}"
 "#
@@ -111,30 +124,36 @@ timeout_secs = 300
     fs::set_permissions(CONFIG_FILE, fs::Permissions::from_mode(0o644))
         .map_err(|e| Error::Config(format!("Failed to set config permissions: {e}")))?;
 
-    // 6. Drop back to real user
+    // 5. Drop back to real user
     let _ = exec::drop_privileges()?;
 
-    // 7. Print enrollment info
-    let encoded_email = agent_email.replace(' ', "%20");
-    let encoded_name = agent_name.replace(' ', "%20");
-    let encoded_key = public_key.replace(' ', "%20");
-    let enroll_url = format!(
-        "{server_url}/enroll?email={encoded_email}&name={encoded_name}&key={encoded_key}&id={agent_id}"
-    );
-
+    // 6. Print enrollment info
     eprintln!();
     eprintln!("  Agent enrolled locally.");
     eprintln!();
     eprintln!("  Agent Name:  {agent_name}");
-    eprintln!("  Agent ID:    {agent_id}");
+    eprintln!("  Agent Email: {agent_email}");
     eprintln!("  Config:      {CONFIG_FILE}");
     eprintln!("  Key:         {}", key_path.display());
     eprintln!("  Public Key:  {public_key}");
-    eprintln!();
-    eprintln!("  Share this URL with your admin to complete enrollment:");
-    eprintln!("  {enroll_url}");
-    eprintln!();
-    eprintln!("  The agent is ready to use once the admin approves.");
+
+    if existing {
+        eprintln!();
+        eprintln!("  Agent added to local config (server-side enrollment skipped).");
+    } else {
+        let encoded_email = agent_email.replace(' ', "%20");
+        let encoded_name = agent_name.replace(' ', "%20");
+        let encoded_key = public_key.replace(' ', "%20");
+        let enroll_url = format!(
+            "{server_url}/enroll?email={encoded_email}&name={encoded_name}&key={encoded_key}"
+        );
+
+        eprintln!();
+        eprintln!("  Share this URL with your admin to complete enrollment:");
+        eprintln!("  {enroll_url}");
+        eprintln!();
+        eprintln!("  The agent is ready to use once the admin approves.");
+    }
     eprintln!();
 
     Ok(())
