@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, DecodingKey, Validation};
 use serde::Deserialize;
 
 use crate::config::Config;
@@ -85,8 +85,8 @@ pub fn verify_grant_jwt(token: &str, config: &Config) -> Result<GrantClaims, Err
     let decoding_key = DecodingKey::from_jwk(jwk)
         .map_err(|e| Error::Jwt(format!("Failed to create decoding key: {e}")))?;
 
-    // Validate with ES256
-    let mut validation = Validation::new(Algorithm::ES256);
+    // Validate using the algorithm declared in the JWT header
+    let mut validation = Validation::new(header.alg);
     // We validate audience manually for clearer error messages
     validation.validate_aud = false;
 

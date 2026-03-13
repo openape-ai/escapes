@@ -1,4 +1,4 @@
-use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, DecodingKey, Validation};
 use serde::Deserialize;
 
 use crate::error::Error;
@@ -19,7 +19,7 @@ pub struct AuthzClaims {
 }
 
 /// Verify an AuthZ-JWT by fetching the JWKS from the IdP and validating
-/// the token signature (ES256) and claims.
+/// the token signature and claims.
 pub fn verify_authz_jwt(token: &str, server_url: &str) -> Result<AuthzClaims, Error> {
     // Decode header to get kid
     let header = decode_header(token)
@@ -47,8 +47,8 @@ pub fn verify_authz_jwt(token: &str, server_url: &str) -> Result<AuthzClaims, Er
     let decoding_key = DecodingKey::from_jwk(jwk)
         .map_err(|e| Error::Jwt(format!("Failed to create decoding key: {e}")))?;
 
-    // Validate with ES256
-    let mut validation = Validation::new(Algorithm::ES256);
+    // Validate using the algorithm declared in the JWT header
+    let mut validation = Validation::new(header.alg);
     // We validate issuer and audience manually for clearer error messages
     validation.validate_aud = false;
 
