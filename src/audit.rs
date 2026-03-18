@@ -5,85 +5,6 @@ use chrono::Utc;
 use nix::unistd::Uid;
 
 use crate::config::Config;
-use crate::grants::Grant;
-
-/// Write an audit log entry for a successful command run.
-/// Called as root, before execvp. Failures are logged to stderr but don't
-/// prevent the command from running.
-pub fn log_run(
-    config: &Config,
-    agent_id: &str,
-    real_uid: Uid,
-    cmd: &[String],
-    cmd_hash: &str,
-    grant: &Grant,
-) {
-    let entry = serde_json::json!({
-        "ts": Utc::now().to_rfc3339(),
-        "event": "run",
-        "real_uid": real_uid.as_raw(),
-        "command": cmd,
-        "cmd_hash": cmd_hash,
-        "grant_id": grant.id,
-        "grant_type": grant.request.grant_type,
-        "agent_id": agent_id,
-        "decided_by": grant.decided_by,
-        "target": config.effective_target(),
-        "cwd": std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default(),
-    });
-
-    write_entry(config, &entry);
-}
-
-/// Write an audit log entry for a denied grant.
-pub fn log_denied(
-    config: &Config,
-    agent_id: &str,
-    real_uid: Uid,
-    cmd: &[String],
-    cmd_hash: &str,
-    grant_id: &str,
-    decided_by: &str,
-) {
-    let entry = serde_json::json!({
-        "ts": Utc::now().to_rfc3339(),
-        "event": "denied",
-        "real_uid": real_uid.as_raw(),
-        "command": cmd,
-        "cmd_hash": cmd_hash,
-        "grant_id": grant_id,
-        "agent_id": agent_id,
-        "decided_by": decided_by,
-        "target": config.effective_target(),
-    });
-
-    write_entry(config, &entry);
-}
-
-/// Write an audit log entry for a timeout.
-pub fn log_timeout(
-    config: &Config,
-    agent_id: &str,
-    real_uid: Uid,
-    cmd: &[String],
-    cmd_hash: &str,
-    grant_id: &str,
-    secs: u64,
-) {
-    let entry = serde_json::json!({
-        "ts": Utc::now().to_rfc3339(),
-        "event": "timeout",
-        "real_uid": real_uid.as_raw(),
-        "command": cmd,
-        "cmd_hash": cmd_hash,
-        "grant_id": grant_id,
-        "agent_id": agent_id,
-        "target": config.effective_target(),
-        "timeout_secs": secs,
-    });
-
-    write_entry(config, &entry);
-}
 
 /// Write an audit log entry for a grant-token mode command run.
 pub fn log_grant_run(
@@ -96,7 +17,6 @@ pub fn log_grant_run(
     let entry = serde_json::json!({
         "ts": Utc::now().to_rfc3339(),
         "event": "grant_run",
-        "mode": "grant-token",
         "real_uid": real_uid.as_raw(),
         "command": cmd,
         "cmd_hash": cmd_hash,
@@ -105,7 +25,10 @@ pub fn log_grant_run(
         "agent": claims.sub,
         "issuer": claims.iss,
         "decided_by": claims.decided_by,
-        "target": config.effective_target(),
+        "audience": claims.aud,
+        "target_host": claims.target_host,
+        "run_as": claims.run_as,
+        "host": config.effective_host(),
         "cwd": std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default(),
     });
 
@@ -113,9 +36,9 @@ pub fn log_grant_run(
 }
 
 /// Write an audit log entry for an error.
+#[allow(dead_code)]
 pub fn log_error(
     config: &Config,
-    agent_id: &str,
     real_uid: Uid,
     cmd: &[String],
     message: &str,
@@ -125,8 +48,7 @@ pub fn log_error(
         "event": "error",
         "real_uid": real_uid.as_raw(),
         "command": cmd,
-        "agent_id": agent_id,
-        "target": config.effective_target(),
+        "host": config.effective_host(),
         "message": message,
     });
 
@@ -134,7 +56,7 @@ pub fn log_error(
 }
 
 fn write_entry(config: &Config, entry: &serde_json::Value) {
-    let log_path = config.effective_audit_log();
+    let log_path = &config.audit_log;
 
     // Ensure parent directory exists
     if let Some(parent) = log_path.parent() {
@@ -144,7 +66,7 @@ fn write_entry(config: &Config, entry: &serde_json::Value) {
     let result = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&log_path)
+        .open(log_path)
         .and_then(|mut file| {
             writeln!(file, "{entry}")
         });
@@ -160,22 +82,20 @@ fn write_entry(config: &Config, entry: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AgentConfig, PollConfig, TlsConfig};
+    use crate::config::{SecurityConfig, TlsConfig};
+    use std::path::PathBuf;
 
     fn test_config(dir: &std::path::Path) -> Config {
         Config {
-            target: Some("test-target".into()),
-            audit_log: Some(dir.join("audit.log")),
-            poll: PollConfig::default(),
+            host: Some("test-host".into()),
+            run_as: "root".into(),
+            audit_log: dir.join("audit.log"),
+            security: SecurityConfig {
+                allowed_issuers: vec!["https://id.openape.at".into()],
+                allowed_approvers: vec!["admin@example.com".into()],
+                allowed_audiences: vec!["apes".into()],
+            },
             tls: TlsConfig::default(),
-            agents: vec![AgentConfig {
-                name: "test-agent".into(),
-                email: "agent+test@id.example.com".into(),
-                public_key: "ssh-ed25519 AAAA".into(),
-                server_url: "https://test.example.com".into(),
-            }],
-            idp: crate::config::IdpConfig::default(),
-            security: crate::config::SecurityConfig::default(),
         }
     }
 

@@ -1,12 +1,16 @@
-server_url = "https://id.example.com"
-agent_id = "550e8400-e29b-41d4-a716-446655440000"
-key_path = "/etc/apes/agent.key"                 # OpenSSH Ed25519 Private Key
-# target = "prod-server-1"                      # default: hostname
-# audit_log = "/var/log/apes/audit.log"
+# apes configuration — privilege elevation via OpenAPE grants
+#
+# Required: [security] section with allowed_issuers and allowed_approvers.
+# Everything else has sensible defaults.
 
-[poll]
-interval_secs = 2
-timeout_secs = 300
+# host = "macmini"                             # default: system hostname
+# run_as = "root"                              # default: "root"
+# audit_log = "/var/log/apes/audit.log"        # default
+
+[security]
+allowed_issuers = ["https://id.openape.at"]    # REQUIRED — trusted IdP URLs
+allowed_approvers = ["phofmann@delta-mind.at"] # REQUIRED — who can approve grants (≈ sudoers)
+# allowed_audiences = ["apes"]                 # default: ["apes"]
 
 # [tls]
 # ca_bundle = "/etc/ssl/certs/ca-certificates.crt"

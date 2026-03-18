@@ -1,22 +1,8 @@
 use std::ffi::CString;
 
-use nix::unistd::{geteuid, getuid, setgid, seteuid, setuid, Uid, User};
+use nix::unistd::{setgid, seteuid, setuid, Uid, User};
 
 use crate::error::Error;
-
-/// Drop privileges from setuid-root to real user.
-/// Returns the real UID for later use in audit log.
-pub fn drop_privileges() -> Result<Uid, Error> {
-    let real_uid = getuid();
-    let effective_uid = geteuid();
-
-    if effective_uid.is_root() {
-        seteuid(real_uid)
-            .map_err(|e| Error::Privilege(format!("Failed to drop privileges: {e}")))?;
-    }
-
-    Ok(real_uid)
-}
 
 /// Re-elevate to root (using saved set-user-ID from setuid bit).
 pub fn elevate() -> Result<(), Error> {

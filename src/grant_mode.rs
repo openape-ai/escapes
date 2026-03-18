@@ -1,5 +1,6 @@
 use std::io::Read;
 
+use base64::Engine;
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, DecodingKey, Validation};
 use serde::Deserialize;
 
@@ -14,6 +15,7 @@ pub struct GrantClaims {
     pub iss: String,
     pub sub: String,
     pub aud: String,
+    pub target_host: String,
     pub iat: u64,
     pub exp: u64,
     pub jti: String,
@@ -25,6 +27,30 @@ pub struct GrantClaims {
     pub command: Option<Vec<String>>,
     pub decided_by: Option<String>,
     pub run_as: Option<String>,
+}
+
+/// Unverified claims extracted from JWT payload before signature verification.
+/// Used to determine which JWKS to fetch.
+#[derive(Debug, Deserialize)]
+struct UnverifiedClaims {
+    iss: String,
+}
+
+/// Extract unverified claims from a JWT without signature verification.
+/// This is safe because we verify the signature afterwards — we only use
+/// the issuer to determine which JWKS endpoint to contact.
+fn extract_unverified_claims(token: &str) -> Result<UnverifiedClaims, Error> {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err(Error::Jwt("Malformed JWT: expected 3 parts".into()));
+    }
+
+    let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts[1])
+        .map_err(|e| Error::Jwt(format!("Failed to decode JWT payload: {e}")))?;
+
+    serde_json::from_slice(&payload_bytes)
+        .map_err(|e| Error::Jwt(format!("Failed to parse JWT payload: {e}")))
 }
 
 /// Resolve the grant JWT from CLI arguments.
@@ -51,16 +77,32 @@ pub fn resolve_grant_jwt(
         return Ok(jwt.trim().to_string());
     }
 
-    Err(Error::Config("No grant token provided".into()))
+    Err(Error::Config("No grant token provided. Use --grant <jwt>, --grant-stdin, or --grant-file <path>.".into()))
 }
 
-/// Verify the grant JWT against the IdP JWKS and return claims.
+/// Verify the grant JWT with full security verification chain:
+///
+/// 1. Extract issuer from JWT (unverified)
+/// 2. Check issuer is in allowed_issuers
+/// 3. Fetch JWKS from {issuer}/.well-known/jwks.json
+/// 4. Verify JWT signature
+/// 5. Check decided_by is in allowed_approvers
+/// 6. Check audience is in allowed_audiences
+/// 7. Check target_host matches config host
 pub fn verify_grant_jwt(token: &str, config: &Config) -> Result<GrantClaims, Error> {
-    let jwks_uri = config.jwks_uri().ok_or_else(|| {
-        Error::Config("No JWKS URI configured. Set [idp] issuer or jwks_uri in config.".into())
-    })?;
+    // Step 1: Extract issuer before any network call
+    let unverified = extract_unverified_claims(token)?;
 
-    // Decode header to get kid
+    // Step 2: Check issuer is trusted (reject unknown issuers before fetching JWKS)
+    if !config.security.allowed_issuers.contains(&unverified.iss) {
+        return Err(Error::Jwt(format!(
+            "Issuer '{}' not in allowed_issuers: {:?}",
+            unverified.iss, config.security.allowed_issuers
+        )));
+    }
+
+    // Step 3: Fetch JWKS from the trusted issuer
+    let jwks_uri = format!("{}/.well-known/jwks.json", unverified.iss);
     let header = decode_header(token)
         .map_err(|e| Error::Jwt(format!("Failed to decode JWT header: {e}")))?;
 
@@ -68,14 +110,12 @@ pub fn verify_grant_jwt(token: &str, config: &Config) -> Result<GrantClaims, Err
         .kid
         .ok_or_else(|| Error::Jwt("JWT header missing kid".into()))?;
 
-    // Fetch JWKS from IdP
     let jwks: JwkSet = ureq::get(&jwks_uri)
         .call()
         .map_err(|e| Error::Jwt(format!("Failed to fetch JWKS from {jwks_uri}: {e}")))?
         .into_json()
         .map_err(|e| Error::Jwt(format!("Failed to parse JWKS: {e}")))?;
 
-    // Find matching key by kid
     let jwk = jwks
         .keys
         .iter()
@@ -85,33 +125,41 @@ pub fn verify_grant_jwt(token: &str, config: &Config) -> Result<GrantClaims, Err
     let decoding_key = DecodingKey::from_jwk(jwk)
         .map_err(|e| Error::Jwt(format!("Failed to create decoding key: {e}")))?;
 
-    // Validate using the algorithm declared in the JWT header
+    // Step 4: Verify JWT signature
     let mut validation = Validation::new(header.alg);
-    // We validate audience manually for clearer error messages
-    validation.validate_aud = false;
+    validation.validate_aud = false; // we validate audience manually below
 
     let token_data = decode::<GrantClaims>(token, &decoding_key, &validation)
         .map_err(|e| Error::Jwt(format!("JWT verification failed: {e}")))?;
 
     let claims = token_data.claims;
 
-    // Validate issuer against config
-    if let Some(ref expected_issuer) = config.idp.issuer {
-        if claims.iss != *expected_issuer {
+    // Step 5: Check decided_by is in allowed_approvers
+    if let Some(ref decided_by) = claims.decided_by {
+        if !config.security.allowed_approvers.contains(decided_by) {
             return Err(Error::Jwt(format!(
-                "Issuer mismatch: expected {expected_issuer}, got {}",
-                claims.iss
+                "Approver '{}' not in allowed_approvers: {:?}",
+                decided_by, config.security.allowed_approvers
             )));
         }
+    } else {
+        return Err(Error::Jwt("Grant token missing decided_by claim".into()));
     }
 
-    // Validate audience against allowed list
-    if !config.security.allowed_audiences.is_empty()
-        && !config.security.allowed_audiences.contains(&claims.aud)
-    {
+    // Step 6: Check audience is in allowed_audiences
+    if !config.security.allowed_audiences.contains(&claims.aud) {
         return Err(Error::Jwt(format!(
-            "Audience '{}' not in allowed list: {:?}",
+            "Audience '{}' not in allowed_audiences: {:?}",
             claims.aud, config.security.allowed_audiences
+        )));
+    }
+
+    // Step 7: Check target_host matches this machine
+    let effective_host = config.effective_host();
+    if claims.target_host != effective_host {
+        return Err(Error::Jwt(format!(
+            "target_host mismatch: JWT has '{}', this machine is '{}'",
+            claims.target_host, effective_host
         )));
     }
 
@@ -181,12 +229,12 @@ pub fn consume_grant(claims: &GrantClaims, token: &str) -> Result<(), Error> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_verify_command_with_array() {
-        let claims = GrantClaims {
+    fn make_claims(overrides: impl FnOnce(&mut GrantClaims)) -> GrantClaims {
+        let mut claims = GrantClaims {
             iss: "https://id.example.com".into(),
             sub: "agent@example.com".into(),
             aud: "apes".into(),
+            target_host: "macmini".into(),
             iat: 0,
             exp: u64::MAX,
             jti: "test".into(),
@@ -195,16 +243,52 @@ mod tests {
             approval: Some("once".into()),
             permissions: None,
             cmd_hash: None,
-            command: Some(vec!["brew".into(), "install".into(), "ffmpeg".into()]),
+            command: None,
             decided_by: Some("admin@example.com".into()),
             run_as: None,
         };
+        overrides(&mut claims);
+        claims
+    }
 
-        // Matching command
+    #[test]
+    fn test_extract_unverified_claims() {
+        // Build a minimal JWT payload
+        let payload = serde_json::json!({
+            "iss": "https://id.openape.at",
+            "sub": "agent@example.com",
+            "aud": "apes",
+            "target_host": "macmini",
+            "iat": 0,
+            "exp": 9999999999u64,
+            "jti": "test",
+            "grant_id": "g1",
+            "grant_type": "once",
+        });
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&payload).unwrap());
+
+        // header.payload.signature — we only need payload for this test
+        let fake_jwt = format!("eyJhbGciOiJFZERTQSJ9.{payload_b64}.fake_sig");
+        let claims = extract_unverified_claims(&fake_jwt).unwrap();
+        assert_eq!(claims.iss, "https://id.openape.at");
+    }
+
+    #[test]
+    fn test_extract_unverified_claims_malformed() {
+        assert!(extract_unverified_claims("not-a-jwt").is_err());
+        assert!(extract_unverified_claims("a.b").is_err());
+    }
+
+    #[test]
+    fn test_verify_command_with_array() {
+        let claims = make_claims(|c| {
+            c.command = Some(vec!["brew".into(), "install".into(), "ffmpeg".into()]);
+        });
+
         let cmd = vec!["brew".into(), "install".into(), "ffmpeg".into()];
         assert!(verify_command(&claims, &cmd).is_ok());
 
-        // Mismatched command
         let bad_cmd = vec!["brew".into(), "install".into(), "vim".into()];
         assert!(verify_command(&claims, &bad_cmd).is_err());
     }
@@ -214,22 +298,9 @@ mod tests {
         let cmd = vec!["rm".into(), "-rf".into(), "/tmp/test".into()];
         let hash = crypto::cmd_hash(&cmd);
 
-        let claims = GrantClaims {
-            iss: "https://id.example.com".into(),
-            sub: "agent@example.com".into(),
-            aud: "apes".into(),
-            iat: 0,
-            exp: u64::MAX,
-            jti: "test".into(),
-            grant_id: "grant-1".into(),
-            grant_type: "once".into(),
-            approval: None,
-            permissions: None,
-            cmd_hash: Some(hash),
-            command: None,
-            decided_by: None,
-            run_as: None,
-        };
+        let claims = make_claims(|c| {
+            c.cmd_hash = Some(hash);
+        });
 
         assert!(verify_command(&claims, &cmd).is_ok());
 
@@ -239,22 +310,7 @@ mod tests {
 
     #[test]
     fn test_verify_command_no_data_rejects() {
-        let claims = GrantClaims {
-            iss: "https://id.example.com".into(),
-            sub: "agent@example.com".into(),
-            aud: "apes".into(),
-            iat: 0,
-            exp: u64::MAX,
-            jti: "test".into(),
-            grant_id: "grant-1".into(),
-            grant_type: "once".into(),
-            approval: None,
-            permissions: None,
-            cmd_hash: None,
-            command: None,
-            decided_by: None,
-            run_as: None,
-        };
+        let claims = make_claims(|_| {});
 
         let cmd = vec!["ls".into()];
         assert!(verify_command(&claims, &cmd).is_err());
@@ -292,22 +348,10 @@ mod tests {
                 .json_body(serde_json::json!({"status": "consumed"}));
         });
 
-        let claims = GrantClaims {
-            iss: server.url(""),
-            sub: "agent@example.com".into(),
-            aud: "apes".into(),
-            iat: 0,
-            exp: u64::MAX,
-            jti: "test".into(),
-            grant_id: "grant-1".into(),
-            grant_type: "once".into(),
-            approval: Some("once".into()),
-            permissions: None,
-            cmd_hash: None,
-            command: Some(vec!["brew".into(), "install".into(), "ffmpeg".into()]),
-            decided_by: None,
-            run_as: None,
-        };
+        let claims = make_claims(|c| {
+            c.iss = server.url("");
+            c.command = Some(vec!["brew".into(), "install".into(), "ffmpeg".into()]);
+        });
 
         let result = consume_grant(&claims, "test-token");
         assert!(result.is_ok());
@@ -319,27 +363,14 @@ mod tests {
         let server = httpmock::MockServer::start();
         server.mock(|when, then| {
             when.method(httpmock::Method::POST)
-                .path("/api/grants/grant-2/consume");
+                .path("/api/grants/grant-1/consume");
             then.status(200)
                 .json_body(serde_json::json!({"error": "already_consumed", "status": "used"}));
         });
 
-        let claims = GrantClaims {
-            iss: server.url(""),
-            sub: "agent@example.com".into(),
-            aud: "apes".into(),
-            iat: 0,
-            exp: u64::MAX,
-            jti: "test".into(),
-            grant_id: "grant-2".into(),
-            grant_type: "once".into(),
-            approval: None,
-            permissions: None,
-            cmd_hash: None,
-            command: None,
-            decided_by: None,
-            run_as: None,
-        };
+        let claims = make_claims(|c| {
+            c.iss = server.url("");
+        });
 
         let result = consume_grant(&claims, "test-token");
         assert!(result.is_err());
@@ -352,27 +383,14 @@ mod tests {
         let server = httpmock::MockServer::start();
         server.mock(|when, then| {
             when.method(httpmock::Method::POST)
-                .path("/api/grants/grant-3/consume");
+                .path("/api/grants/grant-1/consume");
             then.status(200)
                 .json_body(serde_json::json!({"error": "revoked", "status": "revoked"}));
         });
 
-        let claims = GrantClaims {
-            iss: server.url(""),
-            sub: "agent@example.com".into(),
-            aud: "apes".into(),
-            iat: 0,
-            exp: u64::MAX,
-            jti: "test".into(),
-            grant_id: "grant-3".into(),
-            grant_type: "once".into(),
-            approval: None,
-            permissions: None,
-            cmd_hash: None,
-            command: None,
-            decided_by: None,
-            run_as: None,
-        };
+        let claims = make_claims(|c| {
+            c.iss = server.url("");
+        });
 
         let result = consume_grant(&claims, "test-token");
         assert!(result.is_err());
@@ -385,27 +403,14 @@ mod tests {
         let server = httpmock::MockServer::start();
         server.mock(|when, then| {
             when.method(httpmock::Method::POST)
-                .path("/api/grants/grant-4/consume");
+                .path("/api/grants/grant-1/consume");
             then.status(401)
                 .body("Unauthorized");
         });
 
-        let claims = GrantClaims {
-            iss: server.url(""),
-            sub: "agent@example.com".into(),
-            aud: "apes".into(),
-            iat: 0,
-            exp: u64::MAX,
-            jti: "test".into(),
-            grant_id: "grant-4".into(),
-            grant_type: "once".into(),
-            approval: None,
-            permissions: None,
-            cmd_hash: None,
-            command: None,
-            decided_by: None,
-            run_as: None,
-        };
+        let claims = make_claims(|c| {
+            c.iss = server.url("");
+        });
 
         let result = consume_grant(&claims, "test-token");
         assert!(result.is_err());
