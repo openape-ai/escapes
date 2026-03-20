@@ -21,6 +21,10 @@ pub struct Cli {
     #[arg(long)]
     pub grant_file: Option<PathBuf>,
 
+    /// Run command as this user instead of root
+    #[arg(long)]
+    pub run_as: Option<String>,
+
     /// Command and arguments to execute with elevated privileges
     #[arg(last = true)]
     pub cmd: Vec<String>,

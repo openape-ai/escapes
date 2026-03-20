@@ -54,18 +54,20 @@ fn run(cli: &Cli) -> Result<(), Error> {
     // 7. Sanitize environment
     exec::sanitize_env();
 
-    // 8. Switch user: run_as from JWT, or default from config
-    let run_as = claims.run_as.as_deref().unwrap_or(&config.run_as);
+    // 8. Write audit log (while still root — before dropping privileges)
+    let real_uid = nix::unistd::getuid();
+    let cmd_hash = crypto::cmd_hash(&cli.cmd);
+    audit::log_grant_run(&config, &claims, real_uid, &cli.cmd, &cmd_hash);
+
+    // 9. Switch user: CLI flag > JWT claim > config default
+    let run_as = cli.run_as.as_deref()
+        .or(claims.run_as.as_deref())
+        .unwrap_or(&config.run_as);
     if run_as == "root" {
         exec::become_root()?;
     } else {
         exec::switch_user(run_as)?;
     }
-
-    // 9. Write audit log
-    let real_uid = nix::unistd::getuid();
-    let cmd_hash = crypto::cmd_hash(&cli.cmd);
-    audit::log_grant_run(&config, &claims, real_uid, &cli.cmd, &cmd_hash);
 
     // 10. exec the command (replaces this process)
     exec::run_command(&cli.cmd)
