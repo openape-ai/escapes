@@ -125,8 +125,14 @@ allowed_audiences = ["apes"]
         let config = Config::load(&config_path).unwrap();
         assert_eq!(config.effective_host(), "macmini");
         assert_eq!(config.run_as, "root");
-        assert_eq!(config.security.allowed_issuers, vec!["https://id.openape.at"]);
-        assert_eq!(config.security.allowed_approvers, vec!["phofmann@delta-mind.at"]);
+        assert_eq!(
+            config.security.allowed_issuers,
+            vec!["https://id.openape.at"]
+        );
+        assert_eq!(
+            config.security.allowed_approvers,
+            vec!["phofmann@delta-mind.at"]
+        );
         assert_eq!(config.security.allowed_audiences, vec!["apes"]);
     }
 
@@ -172,7 +178,10 @@ allowed_approvers = ["admin@example.com"]
         let result = Config::load(&config_path);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("allowed_issuers"), "error should mention allowed_issuers: {msg}");
+        assert!(
+            msg.contains("allowed_issuers"),
+            "error should mention allowed_issuers: {msg}"
+        );
     }
 
     #[test]
@@ -193,7 +202,10 @@ allowed_approvers = []
         let result = Config::load(&config_path);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("allowed_approvers"), "error should mention allowed_approvers: {msg}");
+        assert!(
+            msg.contains("allowed_approvers"),
+            "error should mention allowed_approvers: {msg}"
+        );
     }
 
     #[test]

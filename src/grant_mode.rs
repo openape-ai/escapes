@@ -72,12 +72,15 @@ pub fn resolve_grant_jwt(
     }
 
     if let Some(path) = grant_file {
-        let jwt = std::fs::read_to_string(path)
-            .map_err(|e| Error::Config(format!("Failed to read grant file {}: {e}", path.display())))?;
+        let jwt = std::fs::read_to_string(path).map_err(|e| {
+            Error::Config(format!("Failed to read grant file {}: {e}", path.display()))
+        })?;
         return Ok(jwt.trim().to_string());
     }
 
-    Err(Error::Config("No grant token provided. Use --grant <jwt>, --grant-stdin, or --grant-file <path>.".into()))
+    Err(Error::Config(
+        "No grant token provided. Use --grant <jwt>, --grant-stdin, or --grant-file <path>.".into(),
+    ))
 }
 
 /// Verify the grant JWT with full security verification chain:
@@ -193,7 +196,9 @@ pub fn verify_command(claims: &GrantClaims, cmd: &[String]) -> Result<(), Error>
     }
 
     // No command verification data in JWT — reject
-    Err(Error::Jwt("Grant token has neither command nor cmd_hash — cannot verify command".into()))
+    Err(Error::Jwt(
+        "Grant token has neither command nor cmd_hash — cannot verify command".into(),
+    ))
 }
 
 /// Call the IdP consume endpoint to verify and consume the grant.
@@ -375,7 +380,10 @@ mod tests {
         let result = consume_grant(&claims, "test-token");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("already_consumed"), "Expected already_consumed error, got: {err}");
+        assert!(
+            err.contains("already_consumed"),
+            "Expected already_consumed error, got: {err}"
+        );
     }
 
     #[test]
@@ -395,7 +403,10 @@ mod tests {
         let result = consume_grant(&claims, "test-token");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("revoked"), "Expected revoked error, got: {err}");
+        assert!(
+            err.contains("revoked"),
+            "Expected revoked error, got: {err}"
+        );
     }
 
     #[test]
@@ -404,8 +415,7 @@ mod tests {
         server.mock(|when, then| {
             when.method(httpmock::Method::POST)
                 .path("/api/grants/grant-1/consume");
-            then.status(401)
-                .body("Unauthorized");
+            then.status(401).body("Unauthorized");
         });
 
         let claims = make_claims(|c| {

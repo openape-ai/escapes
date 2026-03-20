@@ -37,12 +37,7 @@ pub fn log_grant_run(
 
 /// Write an audit log entry for an error.
 #[allow(dead_code)]
-pub fn log_error(
-    config: &Config,
-    real_uid: Uid,
-    cmd: &[String],
-    message: &str,
-) {
+pub fn log_error(config: &Config, real_uid: Uid, cmd: &[String], message: &str) {
     let entry = serde_json::json!({
         "ts": Utc::now().to_rfc3339(),
         "event": "error",
@@ -67,9 +62,7 @@ fn write_entry(config: &Config, entry: &serde_json::Value) {
         .create(true)
         .append(true)
         .open(log_path)
-        .and_then(|mut file| {
-            writeln!(file, "{entry}")
-        });
+        .and_then(|mut file| writeln!(file, "{entry}"));
 
     if let Err(e) = result {
         eprintln!(

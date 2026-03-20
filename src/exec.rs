@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use nix::unistd::{setgid, seteuid, setuid, Uid, User};
+use nix::unistd::{seteuid, setgid, setuid, Uid, User};
 
 use crate::error::Error;
 
@@ -18,8 +18,7 @@ pub fn elevate() -> Result<(), Error> {
 pub fn become_root() -> Result<(), Error> {
     setgid(nix::unistd::Gid::from_raw(0))
         .map_err(|e| Error::Privilege(format!("Failed to setgid(0): {e}")))?;
-    setuid(Uid::from_raw(0))
-        .map_err(|e| Error::Privilege(format!("Failed to setuid(0): {e}")))?;
+    setuid(Uid::from_raw(0)).map_err(|e| Error::Privilege(format!("Failed to setuid(0): {e}")))?;
     // Keep HOME from the calling user — tools like rustup, cargo, bun
     // store their config under $HOME and break if switched to /var/root.
     // USER/LOGNAME reflect actual privilege level.
@@ -81,8 +80,9 @@ pub fn sanitize_env() {
     }
 
     // SAFETY: Restore the caller's PATH (or fall back to a safe default)
-    let path = caller_path
-        .unwrap_or_else(|| "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string());
+    let path = caller_path.unwrap_or_else(|| {
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string()
+    });
     unsafe { std::env::set_var("PATH", &path) };
 }
 
@@ -98,23 +98,21 @@ pub fn run_command(cmd: &[String]) -> Result<(), Error> {
     let args: Vec<CString> = cmd
         .iter()
         .map(|a| {
-            CString::new(a.as_str())
-                .map_err(|_| Error::Exec(format!("Invalid argument: {a}")))
+            CString::new(a.as_str()).map_err(|_| Error::Exec(format!("Invalid argument: {a}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     let arg_refs: Vec<&std::ffi::CStr> = args.iter().map(|a| a.as_c_str()).collect();
 
     // execvp replaces this process — if it returns, it failed
-    nix::unistd::execvp(&program, &arg_refs)
-        .map_err(|e| {
-            if e == nix::errno::Errno::ENOENT {
-                let path = std::env::var("PATH").unwrap_or_else(|_| "(unset)".to_string());
-                Error::Exec(format!("Command not found: {}. PATH was: {}", cmd[0], path))
-            } else {
-                Error::Exec(format!("execvp failed: {e}"))
-            }
-        })?;
+    nix::unistd::execvp(&program, &arg_refs).map_err(|e| {
+        if e == nix::errno::Errno::ENOENT {
+            let path = std::env::var("PATH").unwrap_or_else(|_| "(unset)".to_string());
+            Error::Exec(format!("Command not found: {}. PATH was: {}", cmd[0], path))
+        } else {
+            Error::Exec(format!("execvp failed: {e}"))
+        }
+    })?;
 
     unreachable!()
 }

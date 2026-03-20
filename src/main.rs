@@ -22,7 +22,9 @@ fn main() {
 
 fn run(cli: &Cli) -> Result<(), Error> {
     if cli.cmd.is_empty() {
-        return Err(Error::Config("No command specified. Usage: apes --grant <jwt> -- <command> [args...]".into()));
+        return Err(Error::Config(
+            "No command specified. Usage: apes --grant <jwt> -- <command> [args...]".into(),
+        ));
     }
 
     // 1. Load config (still root — config is root-owned)
@@ -60,7 +62,9 @@ fn run(cli: &Cli) -> Result<(), Error> {
     audit::log_grant_run(&config, &claims, real_uid, &cli.cmd, &cmd_hash);
 
     // 9. Switch user: CLI flag > JWT claim > config default
-    let run_as = cli.run_as.as_deref()
+    let run_as = cli
+        .run_as
+        .as_deref()
         .or(claims.run_as.as_deref())
         .unwrap_or(&config.run_as);
     if run_as == "root" {
