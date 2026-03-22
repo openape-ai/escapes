@@ -2,7 +2,7 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 BINARY = escapes
 
-.PHONY: build install uninstall clean
+.PHONY: build install uninstall clean setup
 
 build:
 	cargo build --release
@@ -23,3 +23,7 @@ test:
 
 clippy:
 	cargo clippy -- -D warnings
+
+setup:
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured (pre-commit: fmt + clippy + test)"

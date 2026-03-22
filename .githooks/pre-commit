@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+echo "[pre-commit] Running cargo fmt --check..."
+cargo fmt --check || {
+    echo "[pre-commit] ERROR: cargo fmt found unformatted code"
+    echo "[pre-commit] Run 'cargo fmt' to fix, then re-commit."
+    exit 1
+}
+
+echo "[pre-commit] Running cargo clippy..."
+cargo clippy -- -D warnings || {
+    echo "[pre-commit] ERROR: clippy warnings found"
+    exit 1
+}
+
+echo "[pre-commit] Running cargo test..."
+cargo test || {
+    echo "[pre-commit] ERROR: tests failed"
+    exit 1
+}
