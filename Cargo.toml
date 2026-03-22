@@ -1,12 +1,12 @@
 [package]
-name = "openape-sudo"
+name = "openape-escapes"
 version = "0.1.0"
 edition = "2021"
 description = "Privilege elevation via OpenApe grant system"
 license = "AGPL-3.0-or-later"
 
 [[bin]]
-name = "apes"
+name = "escapes"
 path = "src/main.rs"
 
 [dependencies]

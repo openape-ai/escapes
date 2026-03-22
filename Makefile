@@ -1,6 +1,6 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-BINARY = apes
+BINARY = escapes
 
 .PHONY: build install uninstall clean
 

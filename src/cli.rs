@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "apes", about = "Privilege elevation via OpenApe grants")]
+#[command(name = "escapes", about = "Privilege elevation via OpenApe grants")]
 pub struct Cli {
     /// Path to config file
-    #[arg(long, default_value = "/etc/apes/config.toml")]
+    #[arg(long, default_value = "/etc/openape/config.toml")]
     pub config: PathBuf,
 
     /// Grant token JWT
-    #[arg(long, env = "APES_GRANT")]
+    #[arg(long, env = "ESCAPES_GRANT")]
     pub grant: Option<String>,
 
     /// Read grant token from stdin

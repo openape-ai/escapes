@@ -238,7 +238,7 @@ mod tests {
         let mut claims = GrantClaims {
             iss: "https://id.example.com".into(),
             sub: "agent@example.com".into(),
-            aud: "apes".into(),
+            aud: "escapes".into(),
             target_host: "macmini".into(),
             iat: 0,
             exp: u64::MAX,
@@ -262,7 +262,7 @@ mod tests {
         let payload = serde_json::json!({
             "iss": "https://id.openape.at",
             "sub": "agent@example.com",
-            "aud": "apes",
+            "aud": "escapes",
             "target_host": "macmini",
             "iat": 0,
             "exp": 9999999999u64,

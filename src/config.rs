@@ -12,13 +12,13 @@ pub struct SecurityConfig {
     /// Allowed approver identifiers (REQUIRED, non-empty)
     pub allowed_approvers: Vec<String>,
 
-    /// Allowed JWT audiences (default: ["apes"])
+    /// Allowed JWT audiences (default: ["escapes"])
     #[serde(default = "default_allowed_audiences")]
     pub allowed_audiences: Vec<String>,
 }
 
 fn default_allowed_audiences() -> Vec<String> {
-    vec!["apes".to_string()]
+    vec!["escapes".to_string()]
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -55,7 +55,7 @@ fn default_run_as() -> String {
 }
 
 fn default_audit_log() -> PathBuf {
-    PathBuf::from("/var/log/apes/audit.log")
+    PathBuf::from("/var/log/openape/audit.log")
 }
 
 impl Config {
@@ -117,7 +117,7 @@ run_as = "root"
 [security]
 allowed_issuers = ["https://id.openape.at"]
 allowed_approvers = ["phofmann@delta-mind.at"]
-allowed_audiences = ["apes"]
+allowed_audiences = ["escapes"]
 "#
         )
         .unwrap();
@@ -133,7 +133,7 @@ allowed_audiences = ["apes"]
             config.security.allowed_approvers,
             vec!["phofmann@delta-mind.at"]
         );
-        assert_eq!(config.security.allowed_audiences, vec!["apes"]);
+        assert_eq!(config.security.allowed_audiences, vec!["escapes"]);
     }
 
     #[test]
@@ -153,8 +153,8 @@ allowed_approvers = ["admin@example.com"]
 
         let config = Config::load(&config_path).unwrap();
         assert_eq!(config.run_as, "root");
-        assert_eq!(config.audit_log, PathBuf::from("/var/log/apes/audit.log"));
-        assert_eq!(config.security.allowed_audiences, vec!["apes"]);
+        assert_eq!(config.audit_log, PathBuf::from("/var/log/openape/audit.log"));
+        assert_eq!(config.security.allowed_audiences, vec!["escapes"]);
         assert!(config.host.is_none());
         // effective_host should return system hostname when not configured
         assert!(!config.effective_host().is_empty());

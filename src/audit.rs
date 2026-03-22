@@ -86,7 +86,7 @@ mod tests {
             security: SecurityConfig {
                 allowed_issuers: vec!["https://id.openape.at".into()],
                 allowed_approvers: vec!["admin@example.com".into()],
-                allowed_audiences: vec!["apes".into()],
+                allowed_audiences: vec!["escapes".into()],
             },
             tls: TlsConfig::default(),
         }

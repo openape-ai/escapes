@@ -23,7 +23,7 @@ fn main() {
 fn run(cli: &Cli) -> Result<(), Error> {
     if cli.cmd.is_empty() {
         return Err(Error::Config(
-            "No command specified. Usage: apes --grant <jwt> -- <command> [args...]".into(),
+            "No command specified. Usage: escapes --grant <jwt> -- <command> [args...]".into(),
         ));
     }
 

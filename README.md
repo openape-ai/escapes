@@ -1,19 +1,19 @@
-# apes — Privilege Elevation via OpenApe Grants
+# escapes — Privilege Elevation via OpenApe Grants
 
-`apes` is a setuid-root binary that replaces traditional `sudo` with a grant-based approval workflow. Instead of a password, each privileged command requires real-time approval from an authorized approver through an [OpenApe](https://docs.openape.at) Identity Provider (IdP).
+`escapes` is a setuid-root binary that replaces traditional `sudo` with a grant-based approval workflow. Instead of a password, each privileged command requires real-time approval from an authorized approver through an [OpenApe](https://docs.openape.at) Identity Provider (IdP).
 
 ```
-grapes "apes" "whoami" --approval once
+grapes "escapes" "whoami" --approval once
     │
     ▼
 ┌───────────┐   POST /api/grants    ┌────────────────┐
 │  grapes   │ ──────────────────────►│  OpenApe IdP   │
 │  (CLI)    │ ◄── approved + JWT ───│                │
 └─────┬─────┘                       └───────┬────────┘
-      │ apes --grant <jwt> -- whoami         │
+      │ escapes --grant <jwt> -- whoami         │
       ▼                               Approver approves
 ┌───────────┐   POST /consume        in browser UI
-│   apes    │ ──────────────────────►
+│  escapes  │ ──────────────────────►
 │  (setuid) │ ◄── OK ──────────────
 │           │ verify 7 properties
 └─────┬─────┘ elevate, exec
@@ -23,7 +23,7 @@ Command runs as root
 
 **Key properties:**
 
-- **Grant-token only** — `apes` receives a pre-approved JWT from `grapes`; no key management, no polling
+- **Grant-token only** — `escapes` receives a pre-approved JWT from `grapes`; no key management, no polling
 - **7-step verification chain** before any command runs:
   1. Issuer is in `allowed_issuers`
   2. JWT signature valid (JWKS)
@@ -41,9 +41,9 @@ The security boundaries are:
 
 - **`allowed_issuers`** — which IdPs are trusted (only their JWKS is fetched)
 - **`allowed_approvers`** — who can approve grants (equivalent to sudoers)
-- **`allowed_audiences`** — which services this instance accepts grants for (default: `["apes"]`)
+- **`allowed_audiences`** — which services this instance accepts grants for (default: `["escapes"]`)
 - **`target_host`** — grants are bound to a specific machine; a grant for "macmini" won't work on "server01"
-- **Config is root-owned** — `/etc/apes/config.toml` defines the trust boundary; only root can modify it
+- **Config is root-owned** — `/etc/openape/config.toml` defines the trust boundary; only root can modify it
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ The security boundaries are:
 cargo build --release
 ```
 
-The binary is at `target/release/apes`.
+The binary is at `target/release/escapes`.
 
 ## Install
 
@@ -66,27 +66,27 @@ The binary is at `target/release/apes`.
 sudo make install
 ```
 
-This installs `apes` to `/usr/local/bin/apes` with the setuid bit set (`mode 4755`, owner `root`).
+This installs `escapes` to `/usr/local/bin/escapes` with the setuid bit set (`mode 4755`, owner `root`).
 
 ### Manual install (without Make)
 
 ```bash
-sudo install -m 4755 -o root target/release/apes /usr/local/bin/apes
+sudo install -m 4755 -o root target/release/escapes /usr/local/bin/escapes
 ```
 
 ## Configuration
 
-Config lives at `/etc/apes/config.toml` (permissions `0644`, owned by root).
+Config lives at `/etc/openape/config.toml` (permissions `0644`, owned by root).
 
 ```toml
 # host = "macmini"                             # default: system hostname
 # run_as = "root"                              # default: "root"
-# audit_log = "/var/log/apes/audit.log"        # default
+# audit_log = "/var/log/openape/audit.log"        # default
 
 [security]
 allowed_issuers = ["https://id.openape.at"]    # REQUIRED
 allowed_approvers = ["phofmann@delta-mind.at"] # REQUIRED
-# allowed_audiences = ["apes"]                 # default: ["apes"]
+# allowed_audiences = ["escapes"]                 # default: ["escapes"]
 
 # [tls]
 # ca_bundle = "/etc/ssl/certs/ca-certificates.crt"
@@ -98,10 +98,10 @@ allowed_approvers = ["phofmann@delta-mind.at"] # REQUIRED
 |-------|----------|---------|-------------|
 | `host` | no | system hostname | Machine identifier for `target_host` verification |
 | `run_as` | no | `"root"` | Default user to execute commands as |
-| `audit_log` | no | `/var/log/apes/audit.log` | Path to the JSONL audit log |
+| `audit_log` | no | `/var/log/openape/audit.log` | Path to the JSONL audit log |
 | `security.allowed_issuers` | **yes** | — | Trusted IdP URLs |
 | `security.allowed_approvers` | **yes** | — | Identifiers of users who can approve grants |
-| `security.allowed_audiences` | no | `["apes"]` | Accepted JWT audience values |
+| `security.allowed_audiences` | no | `["escapes"]` | Accepted JWT audience values |
 | `tls.ca_bundle` | no | system default | Custom CA bundle path |
 
 ## Usage
@@ -113,23 +113,23 @@ Use `grapes` to request, approve, and execute:
 grapes login --idp https://id.openape.at --key ~/.ssh/id_ed25519 --email agent+user@id.openape.at
 
 # Request grant and execute
-grapes run apes "whoami" --approval once
+grapes run escapes "whoami" --approval once
 
 # With a reason
-grapes run apes "systemctl restart nginx" --reason "deploy v2.1"
+grapes run escapes "systemctl restart nginx" --reason "deploy v2.1"
 ```
 
 Or provide the JWT directly:
 
 ```bash
-apes --grant <jwt> -- whoami
-apes --grant-file /tmp/grant.jwt -- systemctl restart nginx
-echo "$JWT" | apes --grant-stdin -- apt update
+escapes --grant <jwt> -- whoami
+escapes --grant-file /tmp/grant.jwt -- systemctl restart nginx
+echo "$JWT" | escapes --grant-stdin -- apt update
 ```
 
 ### What happens when you run a command
 
-1. `apes` loads the config (as root)
+1. `escapes` loads the config (as root)
 2. Resolves the grant JWT from `--grant`, `--grant-stdin`, or `--grant-file`
 3. Extracts the issuer from the JWT (unverified)
 4. Checks issuer is in `allowed_issuers`
@@ -147,11 +147,11 @@ echo "$JWT" | apes --grant-stdin -- apt update
 
 ## Audit Log
 
-Every execution and error is logged in JSONL format. Default location: `/var/log/apes/audit.log`.
+Every execution and error is logged in JSONL format. Default location: `/var/log/openape/audit.log`.
 
 **`grant_run`** — command approved and executed:
 ```json
-{"ts":"2026-01-15T10:30:00Z","event":"grant_run","real_uid":1000,"command":["whoami"],"cmd_hash":"ab12...","grant_id":"...","grant_type":"once","agent":"agent@id.openape.at","issuer":"https://id.openape.at","decided_by":"phofmann@delta-mind.at","audience":"apes","target_host":"macmini","host":"macmini"}
+{"ts":"2026-01-15T10:30:00Z","event":"grant_run","real_uid":1000,"command":["whoami"],"cmd_hash":"ab12...","grant_id":"...","grant_type":"once","agent":"agent@id.openape.at","issuer":"https://id.openape.at","decided_by":"phofmann@delta-mind.at","audience":"escapes","target_host":"macmini","host":"macmini"}
 ```
 
 **`error`** — unexpected failure:
@@ -175,10 +175,10 @@ Every execution and error is logged in JSONL format. Default location: `/var/log
 sudo make uninstall
 ```
 
-This removes `/usr/local/bin/apes`. To also remove the config:
+This removes `/usr/local/bin/escapes`. To also remove the config:
 
 ```bash
-sudo rm -rf /etc/apes
+sudo rm -rf /etc/openape
 ```
 
 ## License

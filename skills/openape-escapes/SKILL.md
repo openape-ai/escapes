@@ -1,5 +1,5 @@
 ---
-name: openape-sudo
+name: openape-escapes
 description: Human-gated privilege elevation via the apes CLI. Use when an agent needs to execute commands with elevated (root) privileges, requiring explicit human approval through the OpenAPE grant system.
 metadata:
   openclaw:
@@ -15,24 +15,24 @@ Setuid-root binary for grant-authorized command execution. Every privileged acti
 
 ## Prerequisites
 
-- **`apes` binary** installed (via `cargo install openape-sudo` or from release)
+- **`escapes` binary** installed (via `cargo install openape-escapes` or from release)
 - Binary must be setuid-root: `chmod 4755 apes && chown root:root apes`
-- Config file at `/etc/apes/config.toml` (root-owned, `0644`)
+- Config file at `/etc/openape/config.toml` (root-owned, `0644`)
 
 ## Agent Enrollment
 
 Register a new agent keypair:
 
 ```bash
-sudo apes enroll \
+sudo escapes enroll \
   --server https://id.example.com \
   --agent-email agent+deploy@example.com \
   --agent-name web-deploy \
-  --key ~/.apes/keys/deploy.key
+  --key /etc/openape/agent.key
 ```
 
 - Generates an Ed25519 keypair at `--key` if it doesn't exist
-- Appends `[[agents]]` entry to `/etc/apes/config.toml`
+- Appends `[[agents]]` entry to `/etc/openape/config.toml`
 - Prints enrollment URL for admin to approve on the IdP
 
 Use `--existing` to skip enrollment URL generation when the agent already exists on the server.
@@ -42,14 +42,14 @@ Use `--existing` to skip enrollment URL generation when the agent already exists
 When you already have a grant JWT (e.g. from `grapes exec` or `grapes token`):
 
 ```bash
-apes --grant <jwt> -- <command> [args...]
+escapes --grant <jwt> -- <command> [args...]
 ```
 
 Alternative input methods:
 
 ```bash
-echo "$JWT" | apes --grant-stdin -- apt update
-apes --grant-file /tmp/grant.jwt -- systemctl restart nginx
+echo "$JWT" | escapes --grant-stdin -- apt update
+escapes --grant-file /tmp/grant.jwt -- systemctl restart nginx
 ```
 
 **Flow:**
@@ -63,7 +63,7 @@ apes --grant-file /tmp/grant.jwt -- systemctl restart nginx
 Polls the IdP for human approval:
 
 ```bash
-apes --key ~/.apes/keys/deploy.key -- systemctl restart myapp
+escapes --key /etc/openape/agent.key -- systemctl restart myapp
 ```
 
 **Options:**
@@ -84,45 +84,45 @@ apes --key ~/.apes/keys/deploy.key -- systemctl restart myapp
 Update an agent's IdP URL:
 
 ```bash
-sudo apes update --email agent+deploy@example.com --server https://new-idp.example.com
+sudo escapes update --email agent+deploy@example.com --server https://new-idp.example.com
 ```
 
 Remove an agent locally:
 
 ```bash
-sudo apes remove --email agent+deploy@example.com
+sudo escapes remove --email agent+deploy@example.com
 ```
 
 Remove locally and from IdP:
 
 ```bash
-sudo apes remove --email agent+deploy@example.com --remote
+sudo escapes remove --email agent+deploy@example.com --remote
 ```
 
 ## Configuration
 
-**File:** `/etc/apes/config.toml`
+**File:** `/etc/openape/config.toml`
 
 ```toml
 # Optional hostname override (default: system hostname)
 target = "server01"
 
-# Optional audit log path (default: /var/log/apes/audit.log)
-audit_log = "/var/log/apes/audit.log"
+# Optional audit log path (default: /var/log/openape/audit.log)
+audit_log = "/var/log/openape/audit.log"
 
 [poll]
 interval_secs = 2        # Poll interval (default: 2)
 timeout_secs = 300        # Max wait time (default: 300)
 
 [tls]
-ca_bundle = "/etc/apes/ca.pem"   # For self-signed certs
+ca_bundle = "/etc/openape/ca.pem"   # For self-signed certs
 
 [idp]
 issuer = "https://id.openape.at"                           # Trusted issuer
 jwks_uri = "https://id.openape.at/.well-known/jwks.json"   # Optional, defaults to {issuer}/.well-known/jwks.json
 
 [security]
-allowed_audiences = ["apes"]   # JWT audience claim whitelist (default: ["apes"])
+allowed_audiences = ["escapes"]   # JWT audience claim whitelist (default: ["escapes"])
 
 [[agents]]
 name = "web-deploy"
@@ -135,7 +135,7 @@ Multiple `[[agents]]` blocks are supported for multi-agent setups.
 
 ## Audit Log
 
-**Format:** JSONL (one JSON object per line), appended to `/var/log/apes/audit.log`.
+**Format:** JSONL (one JSON object per line), appended to `/var/log/openape/audit.log`.
 
 **Event types:**
 
