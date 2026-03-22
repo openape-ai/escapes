@@ -153,7 +153,10 @@ allowed_approvers = ["admin@example.com"]
 
         let config = Config::load(&config_path).unwrap();
         assert_eq!(config.run_as, "root");
-        assert_eq!(config.audit_log, PathBuf::from("/var/log/openape/audit.log"));
+        assert_eq!(
+            config.audit_log,
+            PathBuf::from("/var/log/openape/audit.log")
+        );
         assert_eq!(config.security.allowed_audiences, vec!["escapes"]);
         assert!(config.host.is_none());
         // effective_host should return system hostname when not configured
