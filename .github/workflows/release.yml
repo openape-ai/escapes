@@ -201,8 +201,8 @@ jobs:
             BINDIR="${arch_pair##*:}"
 
             cp "$BINDIR/escapes" escapes
-            ARCH=$ARCH VERSION=$VERSION nfpm package --packager deb --target .
-            ARCH=$ARCH VERSION=$VERSION nfpm package --packager rpm --target .
+            ARCH=$ARCH VERSION=$VERSION nfpm package --config packaging/linux/nfpm.yaml --packager deb --target .
+            ARCH=$ARCH VERSION=$VERSION nfpm package --config packaging/linux/nfpm.yaml --packager rpm --target .
             rm escapes
           done
 
