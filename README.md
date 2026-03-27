@@ -47,31 +47,80 @@ The security boundaries are:
 
 ## Prerequisites
 
-- **Rust toolchain** (stable, 1.70+) — install via [rustup](https://rustup.rs)
 - **A running OpenApe IdP** with grants support — see [docs.openape.at](https://docs.openape.at)
 - **grapes CLI** — the companion tool that handles login, grant requests, and token retrieval
-- **Linux** (setuid + execvp; macOS works for development)
-
-## Build
-
-```bash
-cargo build --release
-```
-
-The binary is at `target/release/escapes`.
+- **macOS** (aarch64/x86_64) or **Linux** (amd64/arm64)
 
 ## Install
 
+### macOS (recommended)
+
+Download the `.pkg` installer from [GitHub Releases](https://github.com/openape-ai/escapes/releases/latest) and double-click. The installer sets the setuid bit, creates `/etc/openape/config.toml`, and the audit log directory.
+
+### Linux (Debian/Ubuntu)
+
 ```bash
+curl -sSfLO https://github.com/openape-ai/escapes/releases/latest/download/openape-escapes_0.3.0_amd64.deb
+sudo dpkg -i openape-escapes_0.3.0_amd64.deb
+```
+
+### Linux (RHEL/Fedora)
+
+```bash
+curl -sSfLO https://github.com/openape-ai/escapes/releases/latest/download/openape-escapes-0.3.0.x86_64.rpm
+sudo rpm -i openape-escapes-0.3.0.x86_64.rpm
+```
+
+### Shell installer (all platforms)
+
+```bash
+curl -sSf https://raw.githubusercontent.com/openape-ai/escapes/main/packaging/install.sh | sudo bash
+```
+
+Downloads the latest release, verifies SHA256 checksums, and installs with the setuid bit.
+
+### From source
+
+Requires [Rust](https://rustup.rs) 1.70+:
+
+```bash
+cargo build --release
 sudo make install
 ```
 
-This installs `escapes` to `/usr/local/bin/escapes` with the setuid bit set (`mode 4755`, owner `root`).
-
-### Manual install (without Make)
+## Update
 
 ```bash
-sudo install -m 4755 -o root target/release/escapes /usr/local/bin/escapes
+escapes --update
+```
+
+Checks GitHub Releases for a new version, downloads, verifies the checksum, and atomically replaces the binary (preserving setuid root).
+
+## Uninstall
+
+### macOS (.pkg)
+
+```bash
+curl -sSf https://raw.githubusercontent.com/openape-ai/escapes/main/packaging/macos/uninstall.sh | sudo bash
+```
+
+### Linux (.deb)
+
+```bash
+sudo apt remove openape-escapes
+```
+
+### Linux (.rpm)
+
+```bash
+sudo rpm -e openape-escapes
+```
+
+### Manual
+
+```bash
+sudo make uninstall
+sudo rm -rf /etc/openape /var/log/openape  # optional: remove config + logs
 ```
 
 ## Configuration
@@ -168,18 +217,6 @@ Every execution and error is logged in JSONL format. Default location: `/var/log
 | 5 | JWT verification failed or cmd_hash mismatch |
 | 126 | Exec failed or privilege elevation error |
 | 127 | Command not found |
-
-## Uninstall
-
-```bash
-sudo make uninstall
-```
-
-This removes `/usr/local/bin/escapes`. To also remove the config:
-
-```bash
-sudo rm -rf /etc/openape
-```
 
 ## License
 

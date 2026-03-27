@@ -1,6 +1,6 @@
 [package]
 name = "openape-escapes"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "Privilege elevation via OpenApe grant system"
 license = "AGPL-3.0-or-later"
@@ -23,10 +23,17 @@ nix = { version = "0.29", features = ["user", "process", "signal"] }
 thiserror = "2"
 hostname = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
+flate2 = "1"
+tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
 httpmock = "0.7"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/escapes-v{ version }-{ target }.tar.gz"
+bin-dir = "escapes"
+pkg-fmt = "tgz"
 
 [profile.release]
 opt-level = "z"

@@ -5,6 +5,7 @@ mod crypto;
 mod error;
 mod exec;
 mod grant_mode;
+mod update;
 
 use clap::Parser;
 
@@ -13,6 +14,14 @@ use error::Error;
 
 fn main() {
     let cli = Cli::parse();
+
+    if cli.update {
+        if let Err(e) = update::self_update() {
+            eprintln!("{}", e.to_json());
+            std::process::exit(e.exit_code());
+        }
+        return;
+    }
 
     if let Err(e) = run(&cli) {
         eprintln!("{}", e.to_json());

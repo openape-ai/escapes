@@ -13,7 +13,10 @@ install: build
 
 uninstall:
 	rm -f $(BINDIR)/$(BINARY)
+	rm -rf $(PREFIX)/share/openape
 	@echo "Removed $(BINDIR)/$(BINARY)"
+	@echo "Config (/etc/openape) and logs (/var/log/openape) preserved."
+	@echo "Remove manually: sudo rm -rf /etc/openape /var/log/openape"
 
 clean:
 	cargo clean

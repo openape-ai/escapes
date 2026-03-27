@@ -1,0 +1,43 @@
+name: openape-escapes
+arch: "${ARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "OpenApe <hello@openape.at>"
+description: "Privilege elevation via OpenApe grant system"
+license: "AGPL-3.0-or-later"
+homepage: "https://github.com/openape-ai/escapes"
+section: admin
+priority: optional
+
+contents:
+  - src: escapes
+    dst: /usr/local/bin/escapes
+    file_info:
+      owner: root
+      group: root
+      mode: 04755
+
+  - src: config.example.toml
+    dst: /usr/local/share/openape/config.example.toml
+    file_info:
+      owner: root
+      group: root
+      mode: 0644
+
+  - dst: /etc/openape/
+    type: dir
+    file_info:
+      owner: root
+      group: root
+      mode: 0755
+
+  - dst: /var/log/openape/
+    type: dir
+    file_info:
+      owner: root
+      group: root
+      mode: 0700
+
+scripts:
+  postinstall: packaging/linux/postinst.sh
+  preremove: packaging/linux/prerm.sh
