@@ -1,0 +1,262 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate tag matches Cargo.toml
+        id: version
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAG_VERSION=${GITHUB_REF_NAME#v}
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "Version mismatch: Cargo.toml=$CARGO_VERSION, tag=$TAG_VERSION"
+            exit 1
+          fi
+          echo "version=$CARGO_VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          USE_CROSS: ${{ matrix.cross }}
+        run: |
+          if [ "$USE_CROSS" = "true" ]; then
+            cross build --release --target "$BUILD_TARGET"
+          else
+            cargo build --release --target "$BUILD_TARGET"
+          fi
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: escapes-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/escapes
+
+  package-macos:
+    needs: [validate, build]
+    runs-on: macos-14
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: escapes-aarch64-apple-darwin
+          path: bin-arm64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: escapes-x86_64-apple-darwin
+          path: bin-x64
+
+      - name: Create universal binary
+        run: |
+          chmod +x bin-arm64/escapes bin-x64/escapes
+          lipo -create -output escapes bin-arm64/escapes bin-x64/escapes
+          file escapes
+
+      - name: Build .pkg
+        run: |
+          mkdir -p root/usr/local/bin
+          mkdir -p root/usr/local/share/openape
+          cp escapes root/usr/local/bin/escapes
+          cp config.example.toml root/usr/local/share/openape/config.example.toml
+
+          pkgbuild \
+            --root root \
+            --scripts packaging/macos/scripts \
+            --identifier at.openape.escapes \
+            --version "$VERSION" \
+            --ownership recommended \
+            escapes-component.pkg
+
+          productbuild \
+            --distribution packaging/macos/distribution.xml \
+            --package-path . \
+            --version "$VERSION" \
+            "escapes-v${VERSION}-macos-universal.pkg"
+
+      - name: Codesign and notarize
+        if: env.APPLE_CERTIFICATE_P12 != ''
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+          productsign --sign "Developer ID Installer: ${APPLE_TEAM_ID}" \
+            "escapes-v${VERSION}-macos-universal.pkg" \
+            "escapes-v${VERSION}-macos-universal-signed.pkg"
+          mv "escapes-v${VERSION}-macos-universal-signed.pkg" \
+            "escapes-v${VERSION}-macos-universal.pkg"
+
+          xcrun notarytool submit "escapes-v${VERSION}-macos-universal.pkg" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "escapes-v${VERSION}-macos-universal.pkg"
+
+      - name: Create tarballs
+        run: |
+          for arch in aarch64 x86_64; do
+            dir="escapes-v${VERSION}-${arch}-apple-darwin"
+            mkdir -p "$dir"
+            if [ "$arch" = "aarch64" ]; then
+              cp bin-arm64/escapes "$dir/escapes"
+            else
+              cp bin-x64/escapes "$dir/escapes"
+            fi
+            cp config.example.toml LICENSE README.md "$dir/"
+            chmod +x "$dir/escapes"
+            tar czf "${dir}.tar.gz" "$dir"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-macos
+          path: |
+            escapes-v*-macos-universal.pkg
+            escapes-v*-apple-darwin.tar.gz
+
+  package-linux:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: escapes-x86_64-unknown-linux-gnu
+          path: bin-amd64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: escapes-aarch64-unknown-linux-gnu
+          path: bin-arm64
+
+      - name: Install nfpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' \
+            | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+
+      - name: Build packages
+        run: |
+          chmod +x bin-amd64/escapes bin-arm64/escapes
+
+          for arch_pair in "amd64:bin-amd64" "arm64:bin-arm64"; do
+            ARCH="${arch_pair%%:*}"
+            BINDIR="${arch_pair##*:}"
+
+            cp "$BINDIR/escapes" escapes
+            ARCH=$ARCH VERSION=$VERSION nfpm package --packager deb --target .
+            ARCH=$ARCH VERSION=$VERSION nfpm package --packager rpm --target .
+            rm escapes
+          done
+
+      - name: Create tarballs
+        run: |
+          for arch_pair in "x86_64:bin-amd64" "aarch64:bin-arm64"; do
+            arch="${arch_pair%%:*}"
+            bindir="${arch_pair##*:}"
+            dir="escapes-v${VERSION}-${arch}-unknown-linux-gnu"
+            mkdir -p "$dir"
+            cp "$bindir/escapes" "$dir/escapes"
+            cp config.example.toml LICENSE README.md "$dir/"
+            chmod +x "$dir/escapes"
+            tar czf "${dir}.tar.gz" "$dir"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-linux
+          path: |
+            *.deb
+            *.rpm
+            escapes-v*-unknown-linux-gnu.tar.gz
+
+  release:
+    needs: [validate, package-macos, package-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-macos
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-linux
+          path: dist
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums-sha256.txt
+          cat checksums-sha256.txt
+
+      - name: Add installer scripts
+        run: |
+          cp packaging/install.sh dist/install.sh
+          cp packaging/macos/uninstall.sh dist/uninstall.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

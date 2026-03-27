@@ -28,6 +28,9 @@ pub enum Error {
 
     #[error("Privilege error: {0}")]
     Privilege(String),
+
+    #[error("Update error: {0}")]
+    Update(String),
 }
 
 impl Error {
@@ -36,7 +39,7 @@ impl Error {
             Error::Config(_) | Error::ConfigNotFound(_) => 1,
             Error::Jwt(_) | Error::CmdHashMismatch { .. } => 5,
             Error::Exec(_) | Error::Privilege(_) => 126,
-            Error::Http(_) | Error::Io(_) | Error::Json(_) => 1,
+            Error::Http(_) | Error::Io(_) | Error::Json(_) | Error::Update(_) => 1,
         }
     }
 

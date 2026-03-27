@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+BINDIR="/usr/local/bin"
+SHAREDIR="/usr/local/share/openape"
+CONFDIR="/etc/openape"
+LOGDIR="/var/log/openape"
+
+# Enforce setuid root on the binary
+chown root:wheel "$BINDIR/escapes"
+chmod 4755 "$BINDIR/escapes"
+
+# Create config directory
+mkdir -p "$CONFDIR"
+chmod 0755 "$CONFDIR"
+
+# Install config template if no config exists yet
+if [ ! -f "$CONFDIR/config.toml" ]; then
+    cp "$SHAREDIR/config.example.toml" "$CONFDIR/config.toml"
+    chmod 0644 "$CONFDIR/config.toml"
+fi
+
+# Create audit log directory
+mkdir -p "$LOGDIR"
+chmod 0700 "$LOGDIR"
+chown root:wheel "$LOGDIR"
+
+exit 0

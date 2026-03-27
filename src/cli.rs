@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "escapes", about = "Privilege elevation via OpenApe grants")]
+#[command(
+    name = "escapes",
+    about = "Privilege elevation via OpenApe grants",
+    version
+)]
 pub struct Cli {
     /// Path to config file
     #[arg(long, default_value = "/etc/openape/config.toml")]
@@ -24,6 +28,10 @@ pub struct Cli {
     /// Run command as this user instead of root
     #[arg(long)]
     pub run_as: Option<String>,
+
+    /// Update escapes to the latest version from GitHub Releases
+    #[arg(long)]
+    pub update: bool,
 
     /// Command and arguments to execute with elevated privileges
     #[arg(last = true)]

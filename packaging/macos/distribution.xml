@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>OpenApe Escapes</title>
+    <welcome language="en" mime-type="text/plain"><![CDATA[
+OpenApe Escapes — Privilege elevation via grant-based approval.
+
+This installer will:
+  - Install the escapes binary to /usr/local/bin/
+  - Set it up with the required setuid root permission
+  - Create /etc/openape/ with a config template
+  - Create /var/log/openape/ for audit logs
+
+After installation, edit /etc/openape/config.toml with your IdP details.
+]]></welcome>
+    <license file="LICENSE" mime-type="text/plain"/>
+    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="at.openape.escapes"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="at.openape.escapes" visible="false">
+        <pkg-ref id="at.openape.escapes"/>
+    </choice>
+    <pkg-ref id="at.openape.escapes" onConclusion="none">
+        escapes-component.pkg
+    </pkg-ref>
+</installer-gui-script>
