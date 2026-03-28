@@ -162,10 +162,9 @@ fn extract_binary(tarball: &[u8], version: &str, target: &str) -> Result<Vec<u8>
             entry.map_err(|e| Error::Update(format!("failed to read tar entry: {e}")))?;
         let path = entry
             .path()
-            .map_err(|e| Error::Update(format!("invalid tar path: {e}")))?
-            .to_path_buf();
+            .map_err(|e| Error::Update(format!("invalid tar path: {e}")))?;
 
-        if path == PathBuf::from(&expected_path) {
+        if *path == *std::path::Path::new(&expected_path) {
             let mut buf = Vec::new();
             entry
                 .read_to_end(&mut buf)
