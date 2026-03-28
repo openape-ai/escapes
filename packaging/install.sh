@@ -69,12 +69,13 @@ fi
 
 # Extract and install
 tar xzf "$TARBALL"
+EXTRACT_DIR="escapes-v${VERSION}-${PLATFORM}"
 mkdir -p "$BINDIR" "$SHAREDIR"
-install -m 4755 -o root escapes "$BINDIR/escapes"
+install -m 4755 -o root "$EXTRACT_DIR/escapes" "$BINDIR/escapes"
 
 # Install config example
-if [ -f config.example.toml ]; then
-    cp config.example.toml "$SHAREDIR/config.example.toml"
+if [ -f "$EXTRACT_DIR/config.example.toml" ]; then
+    cp "$EXTRACT_DIR/config.example.toml" "$SHAREDIR/config.example.toml"
     chmod 0644 "$SHAREDIR/config.example.toml"
 fi
 
