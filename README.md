@@ -3,14 +3,14 @@
 `escapes` is a setuid-root binary that replaces traditional `sudo` with a grant-based approval workflow. Instead of a password, each privileged command requires real-time approval from an authorized approver through an [OpenApe](https://docs.openape.at) Identity Provider (IdP).
 
 ```
-grapes "escapes" "whoami" --approval once
+apes run --as root -- whoami
     │
     ▼
 ┌───────────┐   POST /api/grants    ┌────────────────┐
-│  grapes   │ ──────────────────────►│  OpenApe IdP   │
-│  (CLI)    │ ◄── approved + JWT ───│                │
+│   apes    │ ──────────────────────►│  OpenApe IdP   │
+│   (CLI)   │ ◄── approved + JWT ───│                │
 └─────┬─────┘                       └───────┬────────┘
-      │ escapes --grant <jwt> -- whoami         │
+      │ escapes --grant <jwt> -- whoami      │
       ▼                               Approver approves
 ┌───────────┐   POST /consume        in browser UI
 │  escapes  │ ──────────────────────►
@@ -23,16 +23,16 @@ Command runs as root
 
 **Key properties:**
 
-- **Grant-token only** — `escapes` receives a pre-approved JWT from `grapes`; no key management, no polling
+- **Grant-token only** — `escapes` receives a pre-approved JWT from `apes`; no key management, no polling
 - **7-step verification chain** before any command runs:
   1. Issuer is in `allowed_issuers`
   2. JWT signature valid (JWKS)
   3. Approver is in `allowed_approvers`
   4. Audience is in `allowed_audiences`
   5. `target_host` matches this machine
-  6. Command/cmd_hash matches
+  6. Command / `cmd_hash` matches
   7. IdP consume check passes (replay protection)
-- Environment is sanitized before exec (LD_PRELOAD, PATH, etc.)
+- Environment is sanitized before exec (`LD_PRELOAD`, `PATH`, etc.)
 - Full audit log in JSONL format
 
 ### Security Model
@@ -42,13 +42,13 @@ The security boundaries are:
 - **`allowed_issuers`** — which IdPs are trusted (only their JWKS is fetched)
 - **`allowed_approvers`** — who can approve grants (equivalent to sudoers)
 - **`allowed_audiences`** — which services this instance accepts grants for (default: `["escapes"]`)
-- **`target_host`** — grants are bound to a specific machine; a grant for "macmini" won't work on "server01"
+- **`target_host`** — grants are bound to a specific machine; a grant for `"macmini"` won't work on `"server01"`
 - **Config is root-owned** — `/etc/openape/config.toml` defines the trust boundary; only root can modify it
 
 ## Prerequisites
 
 - **A running OpenApe IdP** with grants support — see [docs.openape.at](https://docs.openape.at)
-- **grapes CLI** — the companion tool that handles login, grant requests, and token retrieval
+- **[`@openape/apes`](https://www.npmjs.com/package/@openape/apes) CLI** — the companion tool that handles login, grant requests, and execution pipeline
 - **macOS** (aarch64/x86_64) or **Linux** (amd64/arm64)
 
 ## Install
@@ -60,15 +60,15 @@ Download the `.pkg` installer from [GitHub Releases](https://github.com/openape-
 ### Linux (Debian/Ubuntu)
 
 ```bash
-curl -sSfLO https://github.com/openape-ai/escapes/releases/latest/download/openape-escapes_0.3.0_amd64.deb
-sudo dpkg -i openape-escapes_0.3.0_amd64.deb
+curl -sSfLO https://github.com/openape-ai/escapes/releases/latest/download/openape-escapes_0.4.0_amd64.deb
+sudo dpkg -i openape-escapes_0.4.0_amd64.deb
 ```
 
 ### Linux (RHEL/Fedora)
 
 ```bash
-curl -sSfLO https://github.com/openape-ai/escapes/releases/latest/download/openape-escapes-0.3.0.x86_64.rpm
-sudo rpm -i openape-escapes-0.3.0.x86_64.rpm
+curl -sSfLO https://github.com/openape-ai/escapes/releases/latest/download/openape-escapes-0.4.0.x86_64.rpm
+sudo rpm -i openape-escapes-0.4.0.x86_64.rpm
 ```
 
 ### Shell installer (all platforms)
@@ -86,6 +86,12 @@ Requires [Rust](https://rustup.rs) 1.70+:
 ```bash
 cargo build --release
 sudo make install
+```
+
+### Install `apes`
+
+```bash
+npm install -g @openape/apes
 ```
 
 ## Update
@@ -128,14 +134,14 @@ sudo rm -rf /etc/openape /var/log/openape  # optional: remove config + logs
 Config lives at `/etc/openape/config.toml` (permissions `0644`, owned by root).
 
 ```toml
-# host = "macmini"                             # default: system hostname
-# run_as = "root"                              # default: "root"
-# audit_log = "/var/log/openape/audit.log"        # default
+# host = "macmini"                              # default: system hostname
+# run_as = "root"                               # default: "root"
+# audit_log = "/var/log/openape/audit.log"      # default
 
 [security]
-allowed_issuers = ["https://id.openape.at"]    # REQUIRED
-allowed_approvers = ["phofmann@delta-mind.at"] # REQUIRED
-# allowed_audiences = ["escapes"]                 # default: ["escapes"]
+allowed_issuers = ["https://id.openape.at"]     # REQUIRED
+allowed_approvers = ["phofmann@delta-mind.at"]  # REQUIRED
+# allowed_audiences = ["escapes"]               # default: ["escapes"]
 
 # [tls]
 # ca_bundle = "/etc/ssl/certs/ca-certificates.crt"
@@ -155,26 +161,49 @@ allowed_approvers = ["phofmann@delta-mind.at"] # REQUIRED
 
 ## Usage
 
-Use `grapes` to request, approve, and execute:
+Use `apes` to request, approve, and execute:
 
 ```bash
-# Login to IdP (once)
-grapes login --idp https://id.openape.at --key ~/.ssh/id_ed25519 --email agent+user@id.openape.at
+# Login to IdP (once per machine)
+apes login
 
-# Request grant and execute
-grapes run escapes "whoami" --approval once
+# Request grant and execute under root
+apes run --as root -- whoami
 
-# With a reason
-grapes run escapes "systemctl restart nginx" --reason "deploy v2.1"
+# With a reason and a longer-lived approval
+apes run --as root --approval timed --reason "deploy v2.1" -- systemctl restart nginx
+
+# Non-blocking mode (default): returns exit 75 while the grant is pending,
+# the user approves in the browser, then you block once with --wait:
+apes run --as root -- apt update
+# → Grant pending <id>, approval URL printed
+apes grants run <id> --wait
+# → blocks internally until approved, then executes
 ```
 
-Or provide the JWT directly:
+When `apes run` sees `--as <user>`, it switches the audience to `escapes`, posts the grant to the IdP, waits for approval (either in-process with `--wait`, or on a follow-up `apes grants run --wait`), retrieves the JWT, and invokes `escapes --grant <jwt> -- <command>` which performs the 7-step verification chain and elevates to root.
+
+Or provide the JWT directly to `escapes`:
 
 ```bash
 escapes --grant <jwt> -- whoami
 escapes --grant-file /tmp/grant.jwt -- systemctl restart nginx
 echo "$JWT" | escapes --grant-stdin -- apt update
 ```
+
+### CLI reference
+
+`escapes` accepts flags only; there are no subcommands.
+
+| Flag | Description |
+|------|-------------|
+| `--config <path>` | Path to config file (default: `/etc/openape/config.toml`) |
+| `--grant <jwt>` | Grant token JWT (or set `ESCAPES_GRANT` env var) |
+| `--grant-stdin` | Read the JWT from stdin |
+| `--grant-file <path>` | Read the JWT from a file |
+| `--run-as <user>` | Execute command as this user instead of root |
+| `--update` | Self-update from GitHub Releases |
+| `-- <cmd> [args...]` | Command to execute with elevated privileges |
 
 ### What happens when you run a command
 
@@ -187,7 +216,7 @@ echo "$JWT" | escapes --grant-stdin -- apt update
 7. Checks `decided_by` is in `allowed_approvers`
 8. Checks `aud` is in `allowed_audiences`
 9. Checks `target_host` matches this machine
-10. Verifies command matches grant (array or cmd_hash)
+10. Verifies command matches grant (array or `cmd_hash`)
 11. Calls IdP consume endpoint (replay protection)
 12. Elevates to root (or `run_as` user from JWT/config)
 13. Sanitizes environment
@@ -200,7 +229,7 @@ Every execution and error is logged in JSONL format. Default location: `/var/log
 
 **`grant_run`** — command approved and executed:
 ```json
-{"ts":"2026-01-15T10:30:00Z","event":"grant_run","real_uid":1000,"command":["whoami"],"cmd_hash":"ab12...","grant_id":"...","grant_type":"once","agent":"agent@id.openape.at","issuer":"https://id.openape.at","decided_by":"phofmann@delta-mind.at","audience":"escapes","target_host":"macmini","host":"macmini"}
+{"ts":"2026-04-14T10:30:00Z","event":"grant_run","real_uid":1000,"command":["whoami"],"cmd_hash":"ab12...","grant_id":"...","grant_type":"once","agent":"agent@id.openape.at","issuer":"https://id.openape.at","decided_by":"phofmann@delta-mind.at","audience":"escapes","target_host":"macmini","host":"macmini"}
 ```
 
 **`error`** — unexpected failure:
@@ -214,10 +243,10 @@ Every execution and error is logged in JSONL format. Default location: `/var/log
 |------|---------|
 | 0 | Success (command ran) |
 | 1 | Configuration error, HTTP error, I/O error |
-| 5 | JWT verification failed or cmd_hash mismatch |
+| 5 | JWT verification failed or `cmd_hash` mismatch |
 | 126 | Exec failed or privilege elevation error |
 | 127 | Command not found |
 
 ## License
 
-AGPL-3.0-or-later
+MIT
