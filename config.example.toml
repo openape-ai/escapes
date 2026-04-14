@@ -1,10 +1,10 @@
-# escapes configuration — privilege elevation via OpenAPE grants
+# escapes configuration — privilege elevation via OpenApe grants
 #
 # Required: [security] section with allowed_issuers and allowed_approvers.
 # Everything else has sensible defaults.
 
-# host = "macmini"                             # default: system hostname
-# run_as = "root"                              # default: "root"
+# host = "macmini"                              # default: system hostname
+# run_as = "root"                               # default: "root"
 # audit_log = "/var/log/openape/audit.log"      # default
 
 [security]
