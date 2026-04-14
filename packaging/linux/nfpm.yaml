@@ -4,7 +4,7 @@ platform: linux
 version: "${VERSION}"
 maintainer: "OpenApe <hello@openape.at>"
 description: "Privilege elevation via OpenApe grant system"
-license: "AGPL-3.0-or-later"
+license: "MIT"
 homepage: "https://github.com/openape-ai/escapes"
 section: admin
 priority: optional
