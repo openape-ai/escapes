@@ -131,7 +131,36 @@ sudo rm -rf /etc/openape /var/log/openape  # optional: remove config + logs
 
 ## Configuration
 
-Config lives at `/etc/openape/config.toml` (permissions `0644`, owned by root).
+Config lives at `/etc/openape/config.toml` (permissions `0600`, owned by root).
+
+### Quick setup with `escapes trust`
+
+Instead of editing TOML by hand, run:
+
+```bash
+sudo escapes trust --idp https://id.openape.ai --approvers you@example.com
+```
+
+This validates that the IdP is reachable and its JWKS has at least one signing key, then writes `/etc/openape/config.toml` with `mode 0600`. Re-running with new approvers merges them in; pass `--replace` to overwrite both lists.
+
+Run without flags in a terminal for an interactive prompt:
+
+```bash
+sudo escapes trust
+# IdP URL (e.g. https://id.openape.ai): …
+# Approver emails (comma-separated): …
+```
+
+Flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--idp <url>` | Issuer URL to trust |
+| `--approvers <a,b,c>` | Comma-separated approver emails |
+| `--replace` | Overwrite instead of merge |
+| `--skip-validation` | Skip the reachability + JWKS probes (airgapped bootstrap) |
+
+### Hand-written TOML
 
 ```toml
 # host = "macmini"                              # default: system hostname
