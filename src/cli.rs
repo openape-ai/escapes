@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
@@ -9,8 +9,11 @@ use clap::Parser;
     version
 )]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     /// Path to config file
-    #[arg(long, default_value = "/etc/openape/config.toml")]
+    #[arg(long, default_value = "/etc/openape/config.toml", global = true)]
     pub config: PathBuf,
 
     /// Grant token JWT
@@ -29,11 +32,39 @@ pub struct Cli {
     #[arg(long)]
     pub run_as: Option<String>,
 
-    /// Update escapes to the latest version from GitHub Releases
-    #[arg(long)]
+    /// Deprecated: use `escapes update` instead
+    #[arg(long, hide = true)]
     pub update: bool,
 
     /// Command and arguments to execute with elevated privileges
     #[arg(last = true)]
     pub cmd: Vec<String>,
+}
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Configure the trust boundary (allowed issuers + approvers).
+    Trust(TrustArgs),
+
+    /// Update escapes to the latest version from GitHub Releases.
+    Update,
+}
+
+#[derive(clap::Args)]
+pub struct TrustArgs {
+    /// Issuer URL to trust (e.g. https://id.openape.ai).
+    #[arg(long)]
+    pub idp: Option<String>,
+
+    /// Comma-separated list of approver emails.
+    #[arg(long)]
+    pub approvers: Option<String>,
+
+    /// Replace existing trust config instead of merging.
+    #[arg(long)]
+    pub replace: bool,
+
+    /// Skip IdP reachability + JWKS validation (airgapped bootstrap).
+    #[arg(long)]
+    pub skip_validation: bool,
 }

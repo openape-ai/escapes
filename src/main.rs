@@ -5,17 +5,35 @@ mod crypto;
 mod error;
 mod exec;
 mod grant_mode;
+mod trust;
 mod update;
 
 use clap::Parser;
 
-use cli::Cli;
+use cli::{Cli, Commands};
 use error::Error;
 
 fn main() {
     let cli = Cli::parse();
 
+    // New-style subcommand dispatch takes precedence.
+    if let Some(cmd) = cli.command.as_ref() {
+        let result = match cmd {
+            Commands::Trust(args) => trust::run(&cli.config, args),
+            Commands::Update => update::self_update(),
+        };
+        if let Err(e) = result {
+            eprintln!("{}", e.to_json());
+            std::process::exit(e.exit_code());
+        }
+        return;
+    }
+
+    // Deprecated flag: keep working for one release, hint at the new form.
     if cli.update {
+        eprintln!(
+            "note: `escapes --update` is deprecated — use `escapes update` in future releases."
+        );
         if let Err(e) = update::self_update() {
             eprintln!("{}", e.to_json());
             std::process::exit(e.exit_code());
