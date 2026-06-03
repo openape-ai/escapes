@@ -29,18 +29,6 @@ fn main() {
         return;
     }
 
-    // Deprecated flag: keep working for one release, hint at the new form.
-    if cli.update {
-        eprintln!(
-            "note: `escapes --update` is deprecated — use `escapes update` in future releases."
-        );
-        if let Err(e) = update::self_update() {
-            eprintln!("{}", e.to_json());
-            std::process::exit(e.exit_code());
-        }
-        return;
-    }
-
     if let Err(e) = run(&cli) {
         eprintln!("{}", e.to_json());
         std::process::exit(e.exit_code());

@@ -32,10 +32,6 @@ pub struct Cli {
     #[arg(long)]
     pub run_as: Option<String>,
 
-    /// Deprecated: use `escapes update` instead
-    #[arg(long, hide = true)]
-    pub update: bool,
-
     /// Command and arguments to execute with elevated privileges
     #[arg(last = true)]
     pub cmd: Vec<String>,

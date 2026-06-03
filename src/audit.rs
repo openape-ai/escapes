@@ -35,21 +35,6 @@ pub fn log_grant_run(
     write_entry(config, &entry);
 }
 
-/// Write an audit log entry for an error.
-#[allow(dead_code)]
-pub fn log_error(config: &Config, real_uid: Uid, cmd: &[String], message: &str) {
-    let entry = serde_json::json!({
-        "ts": Utc::now().to_rfc3339(),
-        "event": "error",
-        "real_uid": real_uid.as_raw(),
-        "command": cmd,
-        "host": config.effective_host(),
-        "message": message,
-    });
-
-    write_entry(config, &entry);
-}
-
 fn write_entry(config: &Config, entry: &serde_json::Value) {
     let log_path = &config.audit_log;
 
