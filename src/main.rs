@@ -61,7 +61,7 @@ fn run(cli: &Cli) -> Result<(), Error> {
     // 5. Online consume-check at IdP (network required)
     //    For `once`: marks grant as consumed atomically
     //    For `timed`/`always`: validates grant is still active
-    eprintln!("verifying grant {}…", &claims.grant_id);
+    eprintln!("verifying grant {}…", claims.grant_id);
     grant_mode::consume_grant(&claims, &grant_jwt)?;
     eprintln!("grant verified");
 
