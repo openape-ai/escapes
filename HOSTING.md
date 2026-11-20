@@ -1,21 +1,9 @@
 # Repository hosting
 
-Development starts at [repos.openape.ai/patrick/escapes](https://repos.openape.ai/patrick/escapes). Push branches and tags to the canonical repository:
+Development happens on GitHub at [github.com/openape-ai/escapes](https://github.com/openape-ai/escapes). Clone, branch, push and open pull requests there:
 
 ```sh
-git remote set-url origin https://repos.openape.ai/patrick/escapes.git
-git remote set-url --push origin https://repos.openape.ai/patrick/escapes.git
-git push origin HEAD
+git clone git@github.com:openape-ai/escapes.git
 ```
 
-The automatic mirror chain is:
-
-1. https://repos.openape.ai/patrick/escapes.git
-2. https://git.openape.ai/openape-ai/escapes.git
-3. https://github.com/openape-ai/escapes.git
-
-Forgejo forwards commit pushes to GitHub and performs a periodic reconciliation every ten minutes. Pure branch deletions may wait for that periodic reconciliation because Forgejo 15 does not trigger its commit notifier for them. Treat both downstream repositories as read-only mirrors for development.
-
-Existing GitHub visibility, collaborators and workflows are retained. GitHub continues to host release assets. Existing CI and deployment providers continue to consume their established refs. Published GitHub recipe and release URLs remain valid. The native forge requires authentication for Git access.
-
-Hosting was migrated and verified on October 1, 2026. Validation compares all branch and tag object IDs and tests propagation from a push made only to the native repository.
+The former hosts repos.openape.ai (ape-git) and git.openape.ai (Forgejo) were retired in November 2026. Their repository URLs redirect to GitHub and refuse pushes; existing clones should set `origin` to the GitHub URL above.
