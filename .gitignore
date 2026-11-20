@@ -4,3 +4,5 @@ packaging/build/
 
 # Local Claude Code agent state
 .claude/
+dist/
+build/
